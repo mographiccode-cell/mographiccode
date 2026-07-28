@@ -21,7 +21,7 @@ export default function Counter({
   }, [inView, to, mv]);
 
   useEffect(() => {
-    const unsub = spring.on("change", (v) => {
+    const unsub = spring.on("change", (v: number) => {
       if (ref.current) ref.current.textContent = `${Math.round(v)}${suffix}`;
     });
     return unsub;
