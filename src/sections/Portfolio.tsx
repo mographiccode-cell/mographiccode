@@ -8,7 +8,7 @@ type Work = {
   titleEn: string;
   category: string;
   year: string;
-  art: string;
+  image: string;
   accent: string;
   url: string;
   big?: boolean;
@@ -20,7 +20,7 @@ const works: Work[] = [
     titleEn: "SESAM Artisan Bakery",
     category: "صفحة هبوط — مطاعم وضيافة",
     year: "2025",
-    art: "from-amber-700 via-orange-600 to-yellow-500",
+    image: "/mographiccode/projects/sesam.jpg",
     accent: "bg-amber-400",
     url: "https://mographiccode-cell.github.io/sesam-sa-landing/",
     big: true,
@@ -30,7 +30,7 @@ const works: Work[] = [
     titleEn: "JUN Beauty of Oman",
     category: "صفحة هبوط — جمال و Yaşam",
     year: "2025",
-    art: "from-rose-600 via-pink-500 to-fuchsia-400",
+    image: "/mographiccode/projects/jun.jpg",
     accent: "bg-rose-400",
     url: "https://mographiccode-cell.github.io/jun-omn-landing/",
   },
@@ -39,7 +39,7 @@ const works: Work[] = [
     titleEn: "HEED Specialty Coffee",
     category: "صفحة هبوط — مقاهي وضيافة",
     year: "2025",
-    art: "from-emerald-700 via-teal-600 to-cyan-500",
+    image: "/mographiccode/projects/heed.jpg",
     accent: "bg-emerald-400",
     url: "https://mographiccode-cell.github.io/heed-cafe-landing/",
   },
@@ -48,7 +48,7 @@ const works: Work[] = [
     titleEn: "Uniq Piece Handcrafted Mugs",
     category: "صفحة هبوط — منتجات فنية",
     year: "2024",
-    art: "from-violet-600 via-purple-500 to-indigo-400",
+    image: "/mographiccode/projects/uniqpi.jpg",
     accent: "bg-violet-400",
     url: "https://mographiccode-cell.github.io/uniq-pi/",
   },
@@ -57,7 +57,7 @@ const works: Work[] = [
     titleEn: "MyCard Oman Digital Invitations",
     category: "صفحة هبوط — خدمات رقمية",
     year: "2024",
-    art: "from-cyan-600 via-sky-500 to-blue-400",
+    image: "/mographiccode/projects/mycard.jpg",
     accent: "bg-cyan-400",
     url: "https://mographiccode-cell.github.io/mycard-oman-landing/",
     big: true,
@@ -67,7 +67,7 @@ const works: Work[] = [
     titleEn: "AVA Studio Qatar",
     category: "صفحة هبوط — استوديو إبداعي",
     year: "2024",
-    art: "from-slate-700 via-zinc-600 to-neutral-500",
+    image: "/mographiccode/projects/avastudio.jpg",
     accent: "bg-slate-400",
     url: "https://mographiccode-cell.github.io/avastudio.qa/",
   },
@@ -152,32 +152,18 @@ export default function Portfolio() {
             <Reveal key={w.titleEn} delay={i * 0.08} className={w.big ? "md:col-span-2" : ""}>
               <TiltCard className="group h-full">
                 <div className="relative flex h-full min-h-[320px] flex-col justify-end overflow-hidden rounded-3xl border border-white/8 md:min-h-[360px]">
-                  {/* background gradient */}
-                  <div className={`absolute inset-0 bg-gradient-to-br ${w.art} opacity-80 transition-transform duration-700 group-hover:scale-105`} />
-                  <div
-                    className="absolute inset-0 opacity-30"
-                    style={{
-                      backgroundImage:
-                        "radial-gradient(circle at 25% 30%, rgba(255,255,255,.35), transparent 40%), radial-gradient(circle at 80% 75%, rgba(0,0,0,.35), transparent 45%)",
-                    }}
+                  {/* real screenshot */}
+                  <img
+                    src={w.image}
+                    alt={w.titleEn}
+                    className="absolute inset-0 h-full w-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
                   />
 
-                  {/* iframe preview */}
-                  <div className="absolute inset-x-4 top-4 bottom-28 overflow-hidden rounded-t-xl border border-white/15 bg-white/5 backdrop-blur-sm transition-all duration-500 group-hover:border-white/25">
-                    <iframe
-                      src={w.url}
-                      title={w.titleEn}
-                      className="h-[200%] w-[200%] origin-top-left border-0 scale-[0.5]"
-                      loading="lazy"
-                      sandbox="allow-scripts allow-same-origin"
-                      style={{ pointerEvents: "none" }}
-                    />
-                    {/* overlay to block interaction on card */}
-                    <div className="absolute inset-0" />
-                  </div>
+                  {/* dark overlay for text readability */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
                   {/* hover overlay with play button */}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                     <button
                       onClick={() => setActiveDemo(w)}
                       className="flex items-center gap-3 rounded-full bg-white px-6 py-3 font-bold text-black shadow-lg transition-transform hover:scale-105"
@@ -188,7 +174,7 @@ export default function Portfolio() {
                   </div>
 
                   {/* bottom info */}
-                  <div className="relative z-10 flex items-end justify-between gap-4 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-6 pt-24">
+                  <div className="relative z-10 flex items-end justify-between gap-4 p-6">
                     <div>
                       <div className="mb-2 flex items-center gap-2 text-xs text-white/70">
                         <span className={`size-1.5 rounded-full ${w.accent}`} />
