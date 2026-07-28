@@ -1,6 +1,7 @@
+import { useState } from "react";
 import TiltCard from "@/components/effects/TiltCard";
 import Reveal from "@/components/effects/Reveal";
-import { ArrowUpLeft } from "lucide-react";
+import { ArrowUpLeft, Play, X, ExternalLink } from "lucide-react";
 
 type Work = {
   title: string;
@@ -72,28 +73,86 @@ const works: Work[] = [
   },
 ];
 
-export default function Portfolio() {
+function DemoModal({ work, onClose }: { work: Work; onClose: () => void }) {
   return (
-    <section id="work" className="relative mx-auto max-w-7xl px-5 py-28 md:px-10">
-      <Reveal className="mb-14 flex flex-wrap items-end justify-between gap-6">
-        <div className="max-w-xl">
-          <p className="mb-3 text-sm font-bold tracking-widest text-cyan-300">— أعمال مختارة</p>
-          <h2 className="font-display text-4xl font-black leading-tight md:text-5xl">
-            مشاريع <span className="text-gradient">تتحدث عن نفسها</span>
-          </h2>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative mx-4 flex h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0a0a0f]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="size-3 rounded-full bg-red-400/80" />
+              <span className="size-3 rounded-full bg-amber-400/80" />
+              <span className="size-3 rounded-full bg-emerald-400/80" />
+            </div>
+            <div className="rounded-full bg-white/5 px-4 py-1.5 text-sm text-white/60">
+              {work.titleEn}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={work.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white transition-colors hover:bg-white/20"
+            >
+              <ExternalLink className="size-4" />
+              فتح في تبويب جديد
+            </a>
+            <button
+              onClick={onClose}
+              className="grid size-9 place-items-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
         </div>
-        <p className="max-w-sm text-white/50">
-          كل مشروع قصة نجاح: عميل راضٍ، درجة امتياز، أو مبيعات تضاعفت.
-        </p>
-      </Reveal>
 
-      <div className="grid gap-5 md:grid-cols-3">
-        {works.map((w, i) => (
-          <Reveal key={w.titleEn} delay={i * 0.08} className={w.big ? "md:col-span-2" : ""}>
-            <a href={w.url} target="_blank" rel="noopener noreferrer" className="block h-full">
+        {/* iframe */}
+        <div className="relative flex-1">
+          <iframe
+            src={work.url}
+            title={work.titleEn}
+            className="h-full w-full border-0"
+            loading="lazy"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Portfolio() {
+  const [activeDemo, setActiveDemo] = useState<Work | null>(null);
+
+  return (
+    <>
+      <section id="work" className="relative mx-auto max-w-7xl px-5 py-28 md:px-10">
+        <Reveal className="mb-14 flex flex-wrap items-end justify-between gap-6">
+          <div className="max-w-xl">
+            <p className="mb-3 text-sm font-bold tracking-widest text-cyan-300">— أعمال مختارة</p>
+            <h2 className="font-display text-4xl font-black leading-tight md:text-5xl">
+              مشاريع <span className="text-gradient">تتحدث عن نفسها</span>
+            </h2>
+          </div>
+          <p className="max-w-sm text-white/50">
+            كل مشروع قصة نجاح: عميل راضٍ، درجة امتياز، أو مبيعات تضاعفت.
+          </p>
+        </Reveal>
+
+        <div className="grid gap-5 md:grid-cols-3">
+          {works.map((w, i) => (
+            <Reveal key={w.titleEn} delay={i * 0.08} className={w.big ? "md:col-span-2" : ""}>
               <TiltCard className="group h-full">
-                <div className="relative flex h-full min-h-[300px] flex-col justify-end overflow-hidden rounded-3xl border border-white/8 md:min-h-[340px]">
-                  {/* generated artwork */}
+                <div className="relative flex h-full min-h-[320px] flex-col justify-end overflow-hidden rounded-3xl border border-white/8 md:min-h-[360px]">
+                  {/* background gradient */}
                   <div className={`absolute inset-0 bg-gradient-to-br ${w.art} opacity-80 transition-transform duration-700 group-hover:scale-105`} />
                   <div
                     className="absolute inset-0 opacity-30"
@@ -102,27 +161,34 @@ export default function Portfolio() {
                         "radial-gradient(circle at 25% 30%, rgba(255,255,255,.35), transparent 40%), radial-gradient(circle at 80% 75%, rgba(0,0,0,.35), transparent 45%)",
                     }}
                   />
-                  {/* mock window chrome */}
-                  <div className="absolute inset-x-6 top-6 rounded-t-2xl border border-white/20 bg-black/25 p-3 backdrop-blur-md transition-transform duration-500 group-hover:-translate-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="size-2.5 rounded-full bg-red-400/80" />
-                      <span className="size-2.5 rounded-full bg-amber-400/80" />
-                      <span className="size-2.5 rounded-full bg-emerald-400/80" />
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <div className="h-2 w-3/5 rounded-full bg-white/30" />
-                      <div className="h-2 w-4/5 rounded-full bg-white/20" />
-                      <div className="h-2 w-2/5 rounded-full bg-white/25" />
-                    </div>
-                    <div className="mt-4 grid grid-cols-3 gap-2">
-                      <div className="h-10 rounded-lg bg-white/15" />
-                      <div className="h-10 rounded-lg bg-white/10" />
-                      <div className="h-10 rounded-lg bg-white/15" />
-                    </div>
+
+                  {/* iframe preview */}
+                  <div className="absolute inset-x-4 top-4 bottom-28 overflow-hidden rounded-t-xl border border-white/15 bg-white/5 backdrop-blur-sm transition-all duration-500 group-hover:border-white/25">
+                    <iframe
+                      src={w.url}
+                      title={w.titleEn}
+                      className="h-[200%] w-[200%] origin-top-left border-0 scale-[0.5]"
+                      loading="lazy"
+                      sandbox="allow-scripts allow-same-origin"
+                      style={{ pointerEvents: "none" }}
+                    />
+                    {/* overlay to block interaction on card */}
+                    <div className="absolute inset-0" />
+                  </div>
+
+                  {/* hover overlay with play button */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                    <button
+                      onClick={() => setActiveDemo(w)}
+                      className="flex items-center gap-3 rounded-full bg-white px-6 py-3 font-bold text-black shadow-lg transition-transform hover:scale-105"
+                    >
+                      <Play className="size-5 fill-current" />
+                      تشغيل الديمو
+                    </button>
                   </div>
 
                   {/* bottom info */}
-                  <div className="relative z-10 flex items-end justify-between gap-4 bg-gradient-to-t from-black/70 to-transparent p-6 pt-20">
+                  <div className="relative z-10 flex items-end justify-between gap-4 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-6 pt-24">
                     <div>
                       <div className="mb-2 flex items-center gap-2 text-xs text-white/70">
                         <span className={`size-1.5 rounded-full ${w.accent}`} />
@@ -131,16 +197,35 @@ export default function Portfolio() {
                       <h3 className="font-display text-2xl font-bold text-white">{w.title}</h3>
                       <p className="mt-1 text-sm text-white/50">{w.titleEn}</p>
                     </div>
-                    <span className="grid size-11 shrink-0 place-items-center rounded-full border border-white/25 bg-white/10 backdrop-blur transition-all duration-300 group-hover:bg-white group-hover:text-black">
-                      <ArrowUpLeft className="size-5" />
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setActiveDemo(w)}
+                        className="grid size-11 shrink-0 place-items-center rounded-full border border-white/25 bg-white/10 backdrop-blur transition-all duration-300 hover:bg-white hover:text-black"
+                        title="تشغيل الديمو"
+                      >
+                        <Play className="size-5 fill-current" />
+                      </button>
+                      <a
+                        href={w.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="grid size-11 shrink-0 place-items-center rounded-full border border-white/25 bg-white/10 backdrop-blur transition-all duration-300 hover:bg-white hover:text-black"
+                        title="فتح في تبويب جديد"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ArrowUpLeft className="size-5" />
+                      </a>
+                    </div>
                   </div>
                 </div>
               </TiltCard>
-            </a>
-          </Reveal>
-        ))}
-      </div>
-    </section>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* demo modal */}
+      {activeDemo && <DemoModal work={activeDemo} onClose={() => setActiveDemo(null)} />}
+    </>
   );
 }

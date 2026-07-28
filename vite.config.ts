@@ -7,7 +7,7 @@ export default defineConfig({
   base: '/mographiccode/',
   plugins: [react()],
   server: {
-    port: 3000,
+    port: 5180,
   },
   resolve: {
     alias: {
