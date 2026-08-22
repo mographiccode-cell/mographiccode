@@ -8,6 +8,10 @@ class PermissionAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val packageName = intent.getStringExtra("packageName") ?: return
         val sensor = intent.getStringExtra("sensor") ?: return
-        runCatching { NativePolicyManager(context).revokeNow(packageName, sensor) }
+        val attempt = intent.getIntExtra("attempt", 0)
+        runCatching {
+            NativePolicyManager(context).revokeFromAlarm(packageName, sensor, attempt)
+        }
+        SessionWatchdogService.refresh(context)
     }
 }
