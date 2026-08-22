@@ -8,38 +8,55 @@ class PrivacyDatabase {
 
   Future<Database> get db async {
     final existing = _database;
-    if (existing != null) return existing;
+    if (existing != null && existing.isOpen) return existing;
+
     final root = await getDatabasesPath();
-    final database = await openDatabase(
-      p.join(root, 'privacy_shield.db'),
-      version: 1,
-      onCreate: (database, version) async {
-        await database.execute('''
-          CREATE TABLE policies(
-            package_name TEXT PRIMARY KEY,
-            label TEXT NOT NULL,
-            camera_blocked INTEGER NOT NULL DEFAULT 0,
-            microphone_blocked INTEGER NOT NULL DEFAULT 0,
-            location_blocked INTEGER NOT NULL DEFAULT 0,
-            updated_at INTEGER NOT NULL
-          )
-        ''');
-        await database.execute('''
-          CREATE TABLE events(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp INTEGER NOT NULL,
-            action TEXT NOT NULL,
-            package_name TEXT,
-            app_label TEXT,
-            sensor TEXT,
-            details TEXT
-          )
-        ''');
-      },
-    );
-    _database = database;
-    return database;
+    final path = p.join(root, 'privacy_shield.db');
+    try {
+      _database = await _open(path);
+    } catch (_) {
+      // Native PolicyStore/DPM is the security source of truth. This database
+      // stores only cache/audit data, so corruption must never prevent startup.
+      await deleteDatabase(path);
+      _database = await _open(path);
+    }
+    return _database!;
   }
+
+  Future<Database> _open(String path) => openDatabase(
+        path,
+        version: 1,
+        onConfigure: (database) async {
+          await database.execute('PRAGMA journal_mode=WAL');
+          await database.execute('PRAGMA synchronous=NORMAL');
+        },
+        onCreate: (database, version) async {
+          await database.execute('''
+            CREATE TABLE policies(
+              package_name TEXT PRIMARY KEY,
+              label TEXT NOT NULL,
+              camera_blocked INTEGER NOT NULL DEFAULT 0,
+              microphone_blocked INTEGER NOT NULL DEFAULT 0,
+              location_blocked INTEGER NOT NULL DEFAULT 0,
+              updated_at INTEGER NOT NULL
+            )
+          ''');
+          await database.execute('''
+            CREATE TABLE events(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              timestamp INTEGER NOT NULL,
+              action TEXT NOT NULL,
+              package_name TEXT,
+              app_label TEXT,
+              sensor TEXT,
+              details TEXT
+            )
+          ''');
+          await database.execute(
+            'CREATE INDEX events_timestamp_idx ON events(timestamp DESC)',
+          );
+        },
+      );
 
   Future<Map<String, AppPolicy>> loadPolicies() async {
     final database = await db;
