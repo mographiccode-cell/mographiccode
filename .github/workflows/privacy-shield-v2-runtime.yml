@@ -1,0 +1,156 @@
+name: Privacy Shield v2 Runtime Gate
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: privacy-shield-v2-runtime
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Flutter 3.47
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+
+      - name: Prepare hardened source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin privacy-shield-v2
+          rm -rf /tmp/privacy-v2 privacy_shield
+          git worktree add --detach /tmp/privacy-v2 origin/privacy-shield-v2
+          flutter create --platforms=android --org com.privacyshield --project-name privacy_shield privacy_shield
+          cp -a /tmp/privacy-v2/privacy_shield_src/. privacy_shield/
+          cd privacy_shield
+          rm -f test/widget_test.dart
+          mkdir -p android/app/src/main/kotlin/com/privacyshield/privacy_shield
+          mkdir -p android/app/src/main/res/xml
+          cp native/android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          cp native/android/kotlin/*.kt android/app/src/main/kotlin/com/privacyshield/privacy_shield/
+          cp native/android/res/xml/*.xml android/app/src/main/res/xml/
+          mkdir -p android/app/src/androidTest/kotlin/com/privacyshield/privacy_shield
+          cp native/android/androidTest/DeviceOwnerRuntimeTest.kt android/app/src/androidTest/kotlin/com/privacyshield/privacy_shield/
+          cp native/android/androidTest/AndroidManifest.xml android/app/src/androidTest/AndroidManifest.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/build.gradle.kts')
+          s = p.read_text()
+          s = s.replace('minSdk = flutter.minSdkVersion', 'minSdk = 31')
+          needle = 'defaultConfig {'
+          if 'testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"' not in s:
+              s = s.replace(needle, needle + '\n        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"', 1)
+          if 'androidTestImplementation("androidx.test.ext:junit:' not in s:
+              s += '''\n\ndependencies {\n    androidTestImplementation("androidx.test.ext:junit:1.2.1")\n    androidTestImplementation("androidx.test:runner:1.6.2")\n}\n'''
+          p.write_text(s)
+          PY
+
+      - name: Flutter and source gates
+        working-directory: privacy_shield
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          dart format lib test
+          flutter analyze --fatal-infos
+          flutter test
+          ! grep -q '<uses-permission android:name="android.permission.CAMERA"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.RECORD_AUDIO"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"' android/app/src/main/AndroidManifest.xml
+
+      - name: Build APK and instrumentation APK
+        working-directory: privacy_shield
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build apk --debug
+          cd android
+          ./gradlew assembleDebugAndroidTest --stacktrace
+
+      - name: Android 15 Device Owner runtime tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          working-directory: privacy_shield
+          script: |
+            set -euo pipefail
+            adb install -r build/app/outputs/flutter-apk/app-debug.apk
+            adb shell dpm set-device-owner com.privacyshield.privacy_shield/.PrivacyAdminReceiver
+            adb shell dpm list owners | tee /tmp/dpm-owners.txt
+            grep -q 'com.privacyshield.privacy_shield' /tmp/dpm-owners.txt
+            adb shell pm grant com.privacyshield.privacy_shield android.permission.POST_NOTIFICATIONS || true
+            adb shell appops set com.privacyshield.privacy_shield ACTIVATE_VPN allow
+
+            adb logcat -c
+            adb shell am start -W -n com.privacyshield.privacy_shield/.MainActivity | tee /tmp/app-start.txt
+            sleep 3
+            test -n "$(adb shell pidof com.privacyshield.privacy_shield | tr -d '\r')"
+            adb shell dumpsys activity activities | grep -q 'com.privacyshield.privacy_shield/.MainActivity'
+
+            cd android
+            ./gradlew connectedDebugAndroidTest --stacktrace
+            cd ..
+
+            adb shell am force-stop com.privacyshield.privacy_shield
+            adb shell am start -W -n com.privacyshield.privacy_shield/.MainActivity
+            sleep 2
+            test -n "$(adb shell pidof com.privacyshield.privacy_shield | tr -d '\r')"
+            adb logcat -d | tee /tmp/privacy-runtime-log.txt
+            ! grep -A 20 -B 2 'FATAL EXCEPTION' /tmp/privacy-runtime-log.txt | grep -q 'com.privacyshield.privacy_shield'
+
+      - name: APK metadata
+        working-directory: privacy_shield
+        shell: bash
+        run: |
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk | tee APK_SHA256.txt
+          stat -c '%s bytes' build/app/outputs/flutter-apk/app-debug.apk | tee APK_SIZE.txt
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-shield-v2-runtime-verified
+          path: |
+            privacy_shield/build/app/outputs/flutter-apk/app-debug.apk
+            privacy_shield/APK_SHA256.txt
+            privacy_shield/APK_SIZE.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload runtime diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-shield-v2-runtime-diagnostics
+          path: |
+            /tmp/app-start.txt
+            /tmp/dpm-owners.txt
+            /tmp/privacy-runtime-log.txt
+            privacy_shield/android/app/build/reports/androidTests/
+            privacy_shield/android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+          retention-days: 7
