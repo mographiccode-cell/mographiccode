@@ -34,7 +34,9 @@ class _PrivacyShieldAppState extends State<PrivacyShieldApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(controller.refreshAll());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(controller.refreshAll());
+    }
   }
 
   @override
@@ -97,7 +99,9 @@ class _HomeShellState extends State<HomeShell> {
         listenable: widget.controller,
         builder: (context, _) {
           if (widget.controller.loading) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
           }
           final pages = <Widget>[
             DashboardScreen(controller: widget.controller),
@@ -107,8 +111,10 @@ class _HomeShellState extends State<HomeShell> {
           ];
           return Scaffold(
             appBar: AppBar(
-              title: const Text('Privacy Shield',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
+              title: const Text(
+                'Privacy Shield',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
               actions: [
                 if (widget.controller.busy)
                   const Padding(
@@ -121,6 +127,7 @@ class _HomeShellState extends State<HomeShell> {
                 else
                   IconButton(
                     onPressed: widget.controller.refreshAll,
+                    tooltip: 'إعادة الفحص من Android',
                     icon: const Icon(Icons.refresh_rounded),
                   ),
               ],
@@ -129,6 +136,10 @@ class _HomeShellState extends State<HomeShell> {
               children: [
                 if (widget.controller.error != null)
                   MaterialBanner(
+                    leading: Icon(
+                      Icons.error_outline_rounded,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                     content: Text(widget.controller.error!),
                     actions: [
                       TextButton(
@@ -137,7 +148,20 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                     ],
                   ),
-                Expanded(child: IndexedStack(index: index, children: pages)),
+                if (widget.controller.auditWarning != null)
+                  MaterialBanner(
+                    leading: const Icon(Icons.storage_rounded),
+                    content: Text(widget.controller.auditWarning!),
+                    actions: [
+                      TextButton(
+                        onPressed: widget.controller.refreshAll,
+                        child: const Text('إعادة المحاولة'),
+                      ),
+                    ],
+                  ),
+                Expanded(
+                  child: IndexedStack(index: index, children: pages),
+                ),
               ],
             ),
             bottomNavigationBar: NavigationBar(
