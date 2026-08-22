@@ -1,22 +1,25 @@
 package com.privacyshield.privacy_shield
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.admin.DevicePolicyManager
-import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
+import android.os.Process
 import android.provider.Settings
+import android.telecom.TelecomManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     private val channelName = "privacy_shield/native"
+    private val ioExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -25,15 +28,17 @@ class MainActivity : FlutterActivity() {
                 val manager = NativePolicyManager(this)
                 when (call.method) {
                     "getStatus" -> result.success(statusMap(manager))
-                    "listApps" -> result.success(listApps())
-                    "getBlockedPolicies" -> result.success(manager.blockedPolicies())
+                    "getSetupDiagnostics" -> result.success(setupDiagnostics(manager))
+                    "listApps" -> runAsync(result) { listApps() }
+                    "getBlockedPolicies" -> runAsync(result) { manager.blockedPolicies() }
                     "setBlocked" -> {
                         manager.setBlocked(call.arg("packageName"), call.arg("sensor"), call.arg("blocked"))
                         result.success(null)
                     }
                     "temporaryGrant" -> {
                         manager.temporaryGrant(
-                            call.arg("packageName"), call.arg("sensor"),
+                            call.arg("packageName"),
+                            call.arg("sensor"),
                             (call.argument<Number>("durationMs") ?: 120000).toLong(),
                         )
                         result.success(null)
@@ -47,13 +52,16 @@ class MainActivity : FlutterActivity() {
                         manager.setPanic(call.arg("enabled"))
                         result.success(null)
                     }
-                    "repairPolicies" -> result.success(manager.repairPolicies())
+                    "repairPolicies" -> runAsync(result) { manager.repairPolicies() }
                     "launchApp" -> result.success(launchTarget(call.arg("packageName")))
                     "openExactAlarmSettings" -> {
                         openExactAlarmSettings(); result.success(null)
                     }
                     "openPrivacySettings" -> {
                         startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS)); result.success(null)
+                    }
+                    "openDeviceAdminSettings" -> {
+                        startActivity(Intent(Settings.ACTION_DEVICE_ADMIN_SETTINGS)); result.success(null)
                     }
                     "startNetworkShield" -> result.success(startNetworkShield())
                     "stopNetworkShield" -> {
@@ -68,47 +76,104 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onDestroy() {
+        ioExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
     private fun statusMap(manager: NativePolicyManager): Map<String, Any> = mapOf(
         "isDeviceOwner" to manager.isDeviceOwner,
         "canGrantSensors" to manager.canGrantSensors,
         "canScheduleExactAlarms" to manager.canScheduleExactAlarms,
         "panicEnabled" to manager.panicEnabled,
-        "networkShieldEnabled" to NetworkShieldService.isEnabled(this),
+        "panicDegraded" to manager.panicDegraded,
+        "policyDriftCount" to manager.policyDriftCount(),
+        "watchdogRunning" to SessionWatchdogService.isRunning(),
+        "networkShieldEnabled" to NetworkShieldService.isActuallyRunning(this),
+        "otherVpnActive" to NetworkShieldService.hasOtherVpn(this),
         "vpnPrepared" to (VpnService.prepare(this) == null),
     )
 
+    @Suppress("DEPRECATION")
+    private fun setupDiagnostics(manager: NativePolicyManager): Map<String, Any> {
+        val dpm = getSystemService(DevicePolicyManager::class.java)
+        val admin = ComponentName(this, PrivacyAdminReceiver::class.java)
+        val deviceProvisioned = Settings.Global.getInt(contentResolver, Settings.Global.DEVICE_PROVISIONED, 0) != 0
+        val provisioningAllowed = runCatching {
+            dpm.isProvisioningAllowed(DevicePolicyManager.ACTION_PROVISION_MANAGED_DEVICE)
+        }.getOrDefault(false)
+        return mapOf(
+            "isAdminActive" to dpm.isAdminActive(admin),
+            "isDeviceOwner" to manager.isDeviceOwner,
+            "deviceProvisioned" to deviceProvisioned,
+            "provisioningAllowed" to provisioningAllowed,
+            "canGrantSensors" to manager.canGrantSensors,
+            "canScheduleExactAlarms" to manager.canScheduleExactAlarms,
+            "adminComponent" to "${packageName}/.PrivacyAdminReceiver",
+            "adbCommand" to "adb shell dpm set-device-owner ${packageName}/.PrivacyAdminReceiver",
+        )
+    }
+
     private fun listApps(): List<Map<String, Any>> {
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val packages = packageManager.queryIntentActivities(launcher, PackageManager.MATCH_ALL)
+        val launcherPackages = packageManager.queryIntentActivities(launcher, PackageManager.MATCH_ALL)
             .map { it.activityInfo.packageName }
-            .filter { it != packageName }
-            .distinct()
-        return packages.mapNotNull { target ->
-            runCatching {
-                val appInfo = if (Build.VERSION.SDK_INT >= 33) {
-                    packageManager.getApplicationInfo(target, PackageManager.ApplicationInfoFlags.of(0))
-                } else {
-                    @Suppress("DEPRECATION") packageManager.getApplicationInfo(target, 0)
-                }
-                val requested = requestedPermissions(target)
-                mapOf(
-                    "packageName" to target,
-                    "label" to packageManager.getApplicationLabel(appInfo).toString(),
-                    "hasCamera" to requested.contains(Manifest.permission.CAMERA),
-                    "hasMicrophone" to requested.contains(Manifest.permission.RECORD_AUDIO),
-                    "hasLocation" to (requested.contains(Manifest.permission.ACCESS_COARSE_LOCATION) || requested.contains(Manifest.permission.ACCESS_FINE_LOCATION)),
-                    "systemApp" to ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0),
-                )
-            }.getOrNull()
-        }.filter { it["hasCamera"] == true || it["hasMicrophone"] == true || it["hasLocation"] == true }
+            .toSet()
+
+        val telecom = getSystemService(TelecomManager::class.java)
+        val defaultDialer = runCatching { telecom.defaultDialerPackage }.getOrNull()
+        val systemDialer = runCatching { telecom.systemDialerPackage }.getOrNull()
+
+        val installed = if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstalledApplications(0)
+        }
+
+        return installed.asSequence()
+            .filter { it.packageName != packageName }
+            .mapNotNull { appInfo ->
+                val target = appInfo.packageName
+                runCatching {
+                    val requested = requestedPermissions(target)
+                    val hasCamera = requested.contains(Manifest.permission.CAMERA)
+                    val hasMicrophone = requested.contains(Manifest.permission.RECORD_AUDIO)
+                    val hasLocation = requested.contains(Manifest.permission.ACCESS_COARSE_LOCATION) ||
+                        requested.contains(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                        requested.contains(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    if (!hasCamera && !hasMicrophone && !hasLocation) return@runCatching null
+
+                    val systemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    val critical = appInfo.uid < Process.FIRST_APPLICATION_UID ||
+                        target == defaultDialer ||
+                        target == systemDialer ||
+                        target in CORE_CRITICAL_PACKAGES ||
+                        (systemApp && target !in launcherPackages)
+
+                    mapOf(
+                        "packageName" to target,
+                        "label" to packageManager.getApplicationLabel(appInfo).toString(),
+                        "hasCamera" to hasCamera,
+                        "hasMicrophone" to hasMicrophone,
+                        "hasLocation" to hasLocation,
+                        "systemApp" to systemApp,
+                        "criticalSystem" to critical,
+                        "enabled" to appInfo.enabled,
+                    )
+                }.getOrNull()
+            }
+            .filterNotNull()
             .sortedBy { (it["label"] as String).lowercase() }
+            .toList()
     }
 
     private fun requestedPermissions(target: String): Set<String> {
         val info = if (Build.VERSION.SDK_INT >= 33) {
             packageManager.getPackageInfo(target, PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
         } else {
-            @Suppress("DEPRECATION") packageManager.getPackageInfo(target, PackageManager.GET_PERMISSIONS)
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(target, PackageManager.GET_PERMISSIONS)
         }
         return info.requestedPermissions?.toSet() ?: emptySet()
     }
@@ -131,6 +196,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun startNetworkShield(): Boolean {
+        if (NetworkShieldService.hasOtherVpn(this) && !NetworkShieldService.isActuallyRunning(this)) {
+            throw IllegalStateException("يوجد VPN آخر فعال. أوقفه أولًا حتى لا يتم قطع اتصاله دون قصد.")
+        }
         val prepare = VpnService.prepare(this)
         if (prepare != null) {
             startActivity(prepare)
@@ -141,7 +209,32 @@ class MainActivity : FlutterActivity() {
         return true
     }
 
+    private fun <T> runAsync(result: MethodChannel.Result, block: () -> T) {
+        ioExecutor.execute {
+            try {
+                val value = block()
+                runOnUiThread { result.success(value) }
+            } catch (t: Throwable) {
+                runOnUiThread { result.error("NATIVE_ERROR", t.message ?: t.javaClass.simpleName, null) }
+            }
+        }
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun <T> io.flutter.plugin.common.MethodCall.arg(key: String): T =
         argument<T>(key) ?: throw IllegalArgumentException("Missing argument: $key")
+
+    companion object {
+        private val CORE_CRITICAL_PACKAGES = setOf(
+            "com.android.systemui",
+            "com.android.settings",
+            "com.android.permissioncontroller",
+            "com.google.android.permissioncontroller",
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.android.phone",
+            "com.android.shell",
+            "com.google.android.gms",
+        )
+    }
 }
