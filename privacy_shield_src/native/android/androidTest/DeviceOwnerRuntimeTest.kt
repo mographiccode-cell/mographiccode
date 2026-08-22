@@ -4,13 +4,17 @@ import android.Manifest
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.location.LocationManager
+import android.net.VpnService
+import android.os.Build
 import android.os.UserManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -49,6 +53,7 @@ class DeviceOwnerRuntimeTest {
 
     @After
     fun tearDown() {
+        runCatching { target.stopService(Intent(target, NetworkShieldService::class.java)) }
         runCatching {
             if (manager.panicEnabled) manager.setPanic(false)
         }
@@ -178,5 +183,33 @@ class DeviceOwnerRuntimeTest {
         assertEquals(beforeLocationEnabled, location.isLocationEnabled)
         assertEquals(beforeScreenCapture, dpm.getScreenCaptureDisabled(admin))
         assertFalse(manager.panicEnabled)
+    }
+
+    @Test
+    fun networkShieldStartsAndStopsAsOwnedVpn() {
+        assertNull(
+            "CI must grant ACTIVATE_VPN AppOp before instrumentation",
+            VpnService.prepare(target),
+        )
+        val intent = Intent(target, NetworkShieldService::class.java)
+        if (Build.VERSION.SDK_INT >= 26) {
+            target.startForegroundService(intent)
+        } else {
+            target.startService(intent)
+        }
+        waitUntil(8_000L) { NetworkShieldService.isActuallyRunning(target) }
+        assertTrue(NetworkShieldService.isActuallyRunning(target))
+
+        target.stopService(intent)
+        waitUntil(8_000L) { !NetworkShieldService.isActuallyRunning(target) }
+        assertFalse(NetworkShieldService.isActuallyRunning(target))
+    }
+
+    private fun waitUntil(timeoutMs: Long, predicate: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (predicate()) return
+            Thread.sleep(250L)
+        }
     }
 }
