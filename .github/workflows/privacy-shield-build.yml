@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: privacy-shield-apk
+  cancel-in-progress: true
+
 jobs:
   build:
     if: github.actor != 'github-actions[bot]'
@@ -123,4 +127,4 @@ jobs:
           test "$(cat /tmp/CI_EXIT_CODE.txt)" = '0'
           test -f /tmp/PrivacyShield-debug.apk
 
-# trigger: analyzer fixes v1
+# trigger: clean analyzer build v2
