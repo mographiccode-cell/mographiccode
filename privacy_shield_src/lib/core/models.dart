@@ -143,7 +143,10 @@ class NativeStatus {
   final bool otherVpnActive;
   final bool vpnPrepared;
 
-  bool get fullProtectionReady => isDeviceOwner && canGrantSensors;
+  bool get temporaryAccessReady => isDeviceOwner && canGrantSensors;
+
+  bool get fullProtectionReady =>
+      temporaryAccessReady && canScheduleExactAlarms;
 }
 
 class SetupDiagnostics {
