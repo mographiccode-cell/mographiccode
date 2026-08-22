@@ -63,7 +63,7 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "openDeviceAdminSettings" -> {
-                        startActivity(Intent(Settings.ACTION_DEVICE_ADMIN_SETTINGS))
+                        openDeviceAdminActivation()
                         result.success(null)
                     }
                     "startNetworkShield" -> result.success(startNetworkShield())
@@ -187,6 +187,19 @@ class MainActivity : FlutterActivity() {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
         return true
+    }
+
+    private fun openDeviceAdminActivation() {
+        val admin = ComponentName(this, PrivacyAdminReceiver::class.java)
+        startActivity(
+            Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
+                putExtra(
+                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Privacy Shield يحتاج Device Admin كخطوة إدارة فقط. Full Device Owner يحتاج provisioning نظامي أو جهاز اختبار نظيف.",
+                )
+            },
+        )
     }
 
     private fun openExactAlarmSettings() {
