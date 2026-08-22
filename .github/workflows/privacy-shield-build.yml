@@ -1,19 +1,18 @@
 name: Privacy Shield Android Build
 
 on:
-  push:
+  pull_request:
     branches: [ main ]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: privacy-shield-apk
+  group: privacy-shield-apk-pr
   cancel-in-progress: true
 
 jobs:
   build:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -28,103 +27,76 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Build, analyze and test
-        id: gate
-        continue-on-error: true
+      - name: Fetch Privacy Shield source
         shell: bash
         run: |
-          set +e
           git fetch origin privacy-shield-ci
           rm -rf /tmp/privacy-ci-src privacy_shield
           git worktree add --detach /tmp/privacy-ci-src origin/privacy-shield-ci
-          (
-            set -euo pipefail
-            echo '=== TOOLCHAIN ==='
-            flutter --version
-            echo '=== GENERATE ANDROID SHELL ==='
-            flutter create --platforms=android --org com.privacyshield --project-name privacy_shield privacy_shield
-            echo '=== COPY SOURCE TREE ==='
-            cp -a /tmp/privacy-ci-src/privacy_shield_src/. privacy_shield/
-            cd privacy_shield
-            rm -f test/widget_test.dart
-            mkdir -p android/app/src/main/kotlin/com/privacyshield/privacy_shield
-            mkdir -p android/app/src/main/res/xml
-            cp native/android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-            cp native/android/kotlin/*.kt android/app/src/main/kotlin/com/privacyshield/privacy_shield/
-            cp native/android/res/xml/*.xml android/app/src/main/res/xml/
-            python3 - <<'PY'
+
+      - name: Generate Android shell
+        shell: bash
+        run: |
+          flutter create --platforms=android --org com.privacyshield --project-name privacy_shield privacy_shield
+          cp -a /tmp/privacy-ci-src/privacy_shield_src/. privacy_shield/
+          cd privacy_shield
+          rm -f test/widget_test.dart
+          mkdir -p android/app/src/main/kotlin/com/privacyshield/privacy_shield
+          mkdir -p android/app/src/main/res/xml
+          cp native/android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          cp native/android/kotlin/*.kt android/app/src/main/kotlin/com/privacyshield/privacy_shield/
+          cp native/android/res/xml/*.xml android/app/src/main/res/xml/
+          python3 - <<'PY'
           from pathlib import Path
           p = Path('android/app/build.gradle.kts')
           s = p.read_text()
           s = s.replace('minSdk = flutter.minSdkVersion', 'minSdk = 31')
           p.write_text(s)
           PY
-            echo '=== PUB GET ==='
-            flutter pub get
-            echo '=== FORMAT ==='
-            dart format lib test
-            echo '=== ANALYZE ==='
-            flutter analyze --fatal-infos
-            echo '=== TEST ==='
-            flutter test
-            echo '=== SELF SENSOR PERMISSION CHECK ==='
-            ! grep -q '<uses-permission android:name="android.permission.CAMERA"' android/app/src/main/AndroidManifest.xml
-            ! grep -q '<uses-permission android:name="android.permission.RECORD_AUDIO"' android/app/src/main/AndroidManifest.xml
-            ! grep -q '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"' android/app/src/main/AndroidManifest.xml
-            ! grep -q '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"' android/app/src/main/AndroidManifest.xml
-            echo '=== APK BUILD ==='
-            flutter build apk --debug
-          ) > /tmp/CI_LOG.txt 2>&1
-          rc=$?
-          echo "$rc" > /tmp/CI_EXIT_CODE.txt
-          if [ "$rc" -eq 0 ] && [ -f privacy_shield/build/app/outputs/flutter-apk/app-debug.apk ]; then
-            cp privacy_shield/build/app/outputs/flutter-apk/app-debug.apk /tmp/PrivacyShield-debug.apk
-            sha256sum /tmp/PrivacyShield-debug.apk | sed 's#/tmp/##' > /tmp/APK_SHA256.txt
-            stat -c '%s bytes' /tmp/PrivacyShield-debug.apk > /tmp/APK_SIZE.txt
-            echo SUCCESS > /tmp/CI_STATUS.txt
-          else
-            echo FAILED > /tmp/CI_STATUS.txt
-          fi
-          exit 0
 
-      - name: Publish result to CI branch
-        if: always()
+      - name: Flutter pub get
+        working-directory: privacy_shield
+        run: flutter pub get
+
+      - name: Format
+        working-directory: privacy_shield
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze
+        working-directory: privacy_shield
+        run: flutter analyze --fatal-infos
+
+      - name: Unit tests
+        working-directory: privacy_shield
+        run: flutter test
+
+      - name: Verify self has no sensor permissions
+        working-directory: privacy_shield
         shell: bash
         run: |
-          set -e
-          git fetch origin privacy-shield-ci
-          rm -rf /tmp/privacy-ci-result
-          git worktree add --detach /tmp/privacy-ci-result origin/privacy-shield-ci
-          cd /tmp/privacy-ci-result
-          cp /tmp/CI_LOG.txt CI_LOG.txt || true
-          cp /tmp/CI_STATUS.txt CI_STATUS.txt || echo FAILED > CI_STATUS.txt
-          cp /tmp/CI_EXIT_CODE.txt CI_EXIT_CODE.txt || echo 99 > CI_EXIT_CODE.txt
-          if [ -f /tmp/PrivacyShield-debug.apk ]; then
-            cp /tmp/PrivacyShield-debug.apk PrivacyShield-debug.apk
-            cp /tmp/APK_SHA256.txt APK_SHA256.txt
-            cp /tmp/APK_SIZE.txt APK_SIZE.txt
-          else
-            rm -f PrivacyShield-debug.apk APK_SHA256.txt APK_SIZE.txt
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f CI_LOG.txt CI_STATUS.txt CI_EXIT_CODE.txt
-          if [ -f PrivacyShield-debug.apk ]; then
-            git add -f PrivacyShield-debug.apk APK_SHA256.txt APK_SIZE.txt
-          else
-            git add -u
-          fi
-          if ! git diff --cached --quiet; then
-            git commit -m '[apk] Privacy Shield CI result'
-            git push origin HEAD:privacy-shield-ci
-          fi
+          ! grep -q '<uses-permission android:name="android.permission.CAMERA"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.RECORD_AUDIO"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"' android/app/src/main/AndroidManifest.xml
 
-      - name: Enforce build result
-        if: always()
+      - name: Build debug APK
+        working-directory: privacy_shield
+        run: flutter build apk --debug
+
+      - name: APK metadata
+        working-directory: privacy_shield
         shell: bash
         run: |
-          test -f /tmp/CI_EXIT_CODE.txt
-          test "$(cat /tmp/CI_EXIT_CODE.txt)" = '0'
-          test -f /tmp/PrivacyShield-debug.apk
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk | tee APK_SHA256.txt
+          stat -c '%s bytes' build/app/outputs/flutter-apk/app-debug.apk | tee APK_SIZE.txt
 
-# trigger: clean analyzer build v2
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-shield-apk
+          path: |
+            privacy_shield/build/app/outputs/flutter-apk/app-debug.apk
+            privacy_shield/APK_SHA256.txt
+            privacy_shield/APK_SIZE.txt
+          if-no-files-found: error
+          retention-days: 7
