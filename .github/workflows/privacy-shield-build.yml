@@ -122,3 +122,5 @@ jobs:
           test -f /tmp/CI_EXIT_CODE.txt
           test "$(cat /tmp/CI_EXIT_CODE.txt)" = '0'
           test -f /tmp/PrivacyShield-debug.apk
+
+# trigger: analyzer fixes v1
