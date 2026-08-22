@@ -54,13 +54,11 @@ class PrivacyController extends ChangeNotifier {
       status = await bridge.getStatus();
       setupDiagnostics = await bridge.getSetupDiagnostics();
       apps = await bridge.listApps();
-
       if (status.isDeviceOwner) {
         await _syncNativePolicies();
       } else {
         _clearUnenforcedPolicyView();
       }
-
       sessions = await bridge.getActiveSessions();
       trackerStats = await bridge.trackerStats();
     } catch (e) {
@@ -147,7 +145,7 @@ class PrivacyController extends ChangeNotifier {
     SensorType sensor, {
     int durationMs = 120000,
   }) async {
-    if (!status.fullProtectionReady) {
+    if (!status.temporaryAccessReady) {
       throw StateError('الفتح المؤقت يحتاج Device Owner يسمح بإدارة صلاحيات الحساسات.');
     }
     if (!isBlocked(app, sensor)) {
@@ -199,7 +197,6 @@ class PrivacyController extends ChangeNotifier {
 
   Future<void> protectAllSensitiveApps() async {
     if (!status.isDeviceOwner) throw StateError('يلزم Device Owner.');
-
     await _runBusy(() async {
       final failures = <String>[];
       var changed = 0;
