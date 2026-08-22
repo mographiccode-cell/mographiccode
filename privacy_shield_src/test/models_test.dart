@@ -10,20 +10,27 @@ void main() {
     expect(policy.blocked(SensorType.location), isFalse);
   });
 
-  test('temporary access readiness does not depend on exact alarm', () {
+  test('temporary access can work without exact alarm but full mode is strict', () {
     const readyWithoutExactAlarm = NativeStatus(
       isDeviceOwner: true,
       canGrantSensors: true,
       canScheduleExactAlarms: false,
       watchdogRunning: true,
     );
+    const full = NativeStatus(
+      isDeviceOwner: true,
+      canGrantSensors: true,
+      canScheduleExactAlarms: true,
+    );
     const noSensorGrantControl = NativeStatus(
       isDeviceOwner: true,
       canGrantSensors: false,
       canScheduleExactAlarms: true,
     );
-    expect(readyWithoutExactAlarm.fullProtectionReady, isTrue);
-    expect(noSensorGrantControl.fullProtectionReady, isFalse);
+    expect(readyWithoutExactAlarm.temporaryAccessReady, isTrue);
+    expect(readyWithoutExactAlarm.fullProtectionReady, isFalse);
+    expect(full.fullProtectionReady, isTrue);
+    expect(noSensorGrantControl.temporaryAccessReady, isFalse);
   });
 
   test('managed app parses critical and preinstalled states separately', () {
