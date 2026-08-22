@@ -14,25 +14,32 @@ class PrivacyController extends ChangeNotifier {
 
   final PrivacyDatabase database;
   final NativeBridge bridge;
+
   NativeStatus status = const NativeStatus();
+  SetupDiagnostics? setupDiagnostics;
   List<ManagedApp> apps = <ManagedApp>[];
   Map<String, AppPolicy> policies = <String, AppPolicy>{};
   List<ActiveSession> sessions = <ActiveSession>[];
   List<AuditEvent> events = <AuditEvent>[];
   Map<String, int> trackerStats = <String, int>{};
+
   bool loading = true;
   bool busy = false;
   String? error;
+  String? auditWarning;
   Timer? _timer;
 
   Future<void> initialize() async {
     try {
-      policies = await database.loadPolicies();
+      try {
+        policies = await database.loadPolicies();
+      } catch (e) {
+        auditWarning = 'تعذر فتح قاعدة السجل المحلية، لكن الحماية Native ستستمر: ${_friendlyError(e)}';
+      }
       await refreshAll();
-      _timer = Timer.periodic(
-        const Duration(seconds: 1),
-        (_) => unawaited(refreshSessions()),
-      );
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (sessions.isNotEmpty) unawaited(refreshSessions());
+      });
     } catch (e) {
       error = _friendlyError(e);
     } finally {
@@ -45,15 +52,25 @@ class PrivacyController extends ChangeNotifier {
     error = null;
     try {
       status = await bridge.getStatus();
+      setupDiagnostics = await bridge.getSetupDiagnostics();
       apps = await bridge.listApps();
+
       if (status.isDeviceOwner) {
         await _syncNativePolicies();
+      } else {
+        _clearUnenforcedPolicyView();
       }
+
       sessions = await bridge.getActiveSessions();
-      events = await database.loadEvents();
       trackerStats = await bridge.trackerStats();
     } catch (e) {
       error = _friendlyError(e);
+    }
+
+    try {
+      events = await database.loadEvents();
+    } catch (e) {
+      auditWarning = 'سجل التدقيق المحلي غير متاح: ${_friendlyError(e)}';
     }
     notifyListeners();
   }
@@ -61,10 +78,10 @@ class PrivacyController extends ChangeNotifier {
   Future<void> refreshSessions() async {
     try {
       sessions = await bridge.getActiveSessions();
+      status = await bridge.getStatus();
       notifyListeners();
     } catch (_) {
-      // Security expiry is enforced natively; a transient UI read failure must
-      // not alter the native permission state.
+      // Android alarms + foreground watchdog enforce expiry independently of UI.
     }
   }
 
@@ -74,17 +91,21 @@ class PrivacyController extends ChangeNotifier {
       final policy = policyFor(app);
       policy.label = app.label;
       for (final sensor in SensorType.values) {
-        policy.setBlocked(
-          sensor,
-          native[app.packageName]?.contains(sensor) ?? false,
-        );
+        policy.setBlocked(sensor, native[app.packageName]?.contains(sensor) ?? false);
       }
-      try {
-        await database.savePolicy(policy);
-      } catch (_) {
-        // Native DPC state is authoritative; SQLite is only a local cache.
+      await _savePolicyBestEffort(policy);
+    }
+  }
+
+  void _clearUnenforcedPolicyView() {
+    for (final app in apps) {
+      final policy = policyFor(app);
+      policy.label = app.label;
+      for (final sensor in SensorType.values) {
+        policy.setBlocked(sensor, false);
       }
     }
+    sessions = <ActiveSession>[];
   }
 
   AppPolicy policyFor(ManagedApp app) => policies.putIfAbsent(
@@ -92,122 +113,116 @@ class PrivacyController extends ChangeNotifier {
         () => AppPolicy(packageName: app.packageName, label: app.label),
       );
 
-  bool isBlocked(ManagedApp app, SensorType sensor) =>
-      policyFor(app).blocked(sensor);
+  bool isBlocked(ManagedApp app, SensorType sensor) => policyFor(app).blocked(sensor);
 
   ActiveSession? sessionFor(String packageName, SensorType sensor) {
     for (final session in sessions) {
-      if (session.packageName == packageName && session.sensor == sensor) {
-        return session;
-      }
+      if (session.packageName == packageName && session.sensor == sensor) return session;
     }
     return null;
   }
 
-  Future<void> setBlocked(
-    ManagedApp app,
-    SensorType sensor,
-    bool blocked,
-  ) async {
+  Future<void> setBlocked(ManagedApp app, SensorType sensor, bool blocked) async {
     if (!status.isDeviceOwner) {
-      throw StateError('يلزم تفعيل وضع Device Owner لفرض السياسة فعليًا.');
+      throw StateError('يلزم Device Owner لفرض المنع على التطبيقات الأخرى.');
     }
+    if (app.criticalSystem && blocked) {
+      throw StateError('هذا مكوّن نظام حرج؛ الحظر اليدوي معطّل لتجنب تعطيل الهاتف.');
+    }
+
     await _runBusy(() async {
       await bridge.setBlocked(app.packageName, sensor, blocked);
-      final policy = policyFor(app);
-      policy.setBlocked(sensor, blocked);
-      policy.label = app.label;
-      try {
-        await database.savePolicy(policy);
-        await database.addEvent(
-          action: blocked ? 'BLOCKED' : 'DEFAULT',
-          packageName: app.packageName,
-          appLabel: app.label,
-          sensor: sensor.wire,
-        );
-      } catch (_) {
-        // DPC/PolicyStore is the source of truth. A cache/audit write failure
-        // must never roll back a successfully enforced Android policy.
-      }
       await refreshAll();
+      await _audit(
+        action: blocked ? 'BLOCKED' : 'DEFAULT',
+        packageName: app.packageName,
+        appLabel: app.label,
+        sensor: sensor.wire,
+      );
     });
   }
 
-  Future<void> grantTemporary(ManagedApp app, SensorType sensor) async {
+  Future<void> grantTemporary(
+    ManagedApp app,
+    SensorType sensor, {
+    int durationMs = 120000,
+  }) async {
     if (!status.fullProtectionReady) {
-      throw StateError('الفتح المؤقت يحتاج Device Owner وصلاحية Exact Alarm.');
+      throw StateError('الفتح المؤقت يحتاج Device Owner يسمح بإدارة صلاحيات الحساسات.');
     }
     if (!isBlocked(app, sensor)) {
       throw StateError('فعّل الحماية لهذا الحساس أولًا، ثم استخدم الفتح المؤقت.');
     }
+    if (status.panicEnabled) {
+      throw StateError('ألغِ Panic Lock أولًا.');
+    }
+
     await _runBusy(() async {
-      await bridge.temporaryGrant(app.packageName, sensor);
-      try {
-        await database.addEvent(
-          action: 'TEMPORARY_GRANT',
-          packageName: app.packageName,
-          appLabel: app.label,
-          sensor: sensor.wire,
-          details: '120 seconds',
-        );
-      } catch (_) {
-        // Audit persistence must not invalidate a natively secured session.
-      }
+      await bridge.temporaryGrant(app.packageName, sensor, durationMs: durationMs);
       await refreshSessions();
-      await bridge.launchApp(app.packageName);
+      await _audit(
+        action: 'TEMPORARY_GRANT',
+        packageName: app.packageName,
+        appLabel: app.label,
+        sensor: sensor.wire,
+        details: '$durationMs ms',
+      );
+      final launched = await bridge.launchApp(app.packageName);
+      if (!launched) {
+        await bridge.revokeNow(app.packageName, sensor);
+        await refreshAll();
+        throw StateError('تعذر فتح التطبيق المستهدف؛ تم سحب الإذن فورًا للأمان.');
+      }
     });
   }
 
   Future<void> revokeNow(ManagedApp app, SensorType sensor) async {
     await _runBusy(() async {
       await bridge.revokeNow(app.packageName, sensor);
-      await database.addEvent(
+      await refreshAll();
+      await _audit(
         action: 'REVOKED_NOW',
         packageName: app.packageName,
         appLabel: app.label,
         sensor: sensor.wire,
       );
-      await refreshAll();
     });
   }
 
   Future<void> setPanic(bool enabled) async {
     await _runBusy(() async {
       await bridge.setPanic(enabled);
-      await database.addEvent(action: enabled ? 'PANIC_ON' : 'PANIC_OFF');
       await refreshAll();
+      await _audit(action: enabled ? 'PANIC_ON' : 'PANIC_OFF');
     });
   }
 
   Future<void> protectAllSensitiveApps() async {
-    if (!status.isDeviceOwner) {
-      throw StateError('يلزم Device Owner.');
-    }
+    if (!status.isDeviceOwner) throw StateError('يلزم Device Owner.');
+
     await _runBusy(() async {
       final failures = <String>[];
-      for (final app in apps.where((a) => !a.systemApp)) {
+      var changed = 0;
+      final targets = apps.where((app) => app.enabled && !app.criticalSystem);
+      for (final app in targets) {
         for (final sensor in SensorType.values) {
-          if (!app.supports(sensor)) {
-            continue;
-          }
+          if (!app.supports(sensor)) continue;
           try {
             await bridge.setBlocked(app.packageName, sensor, true);
+            changed++;
           } catch (_) {
             failures.add('${app.label} - ${sensor.arLabel}');
           }
         }
       }
       await refreshAll();
-      try {
-        await database.addEvent(
-          action: 'PROTECT_ALL',
-          details:
-              failures.isEmpty ? 'all enforced' : 'failures=${failures.length}',
-        );
-      } catch (_) {}
+      await _audit(
+        action: 'PROTECT_ALL',
+        details: 'changed=$changed failures=${failures.length}',
+      );
       if (failures.isNotEmpty) {
         throw StateError(
-          'تم تطبيق الحماية قدر الإمكان، وتعذر فرض ${failures.length} سياسة: ${failures.take(5).join('، ')}',
+          'تم فرض $changed سياسة، وتعذر ${failures.length}: ${failures.take(5).join('، ')}',
         );
       }
     });
@@ -216,41 +231,71 @@ class PrivacyController extends ChangeNotifier {
   Future<void> repairPolicies() async {
     await _runBusy(() async {
       final repaired = await bridge.repairPolicies();
-      await database.addEvent(
-        action: 'REPAIR',
-        details: '$repaired policy entries',
-      );
       await refreshAll();
+      await _audit(action: 'REPAIR', details: '$repaired policy entries');
     });
   }
 
   Future<void> toggleNetworkShield(bool enabled) async {
     await _runBusy(() async {
       if (enabled) {
+        if (status.otherVpnActive && !status.networkShieldEnabled) {
+          throw StateError('يوجد VPN آخر فعال. أوقفه أولًا حتى لا يتم قطع اتصاله.');
+        }
         final started = await bridge.startNetworkShield();
         if (!started) {
-          throw StateError(
-            'وافق على طلب VPN من Android ثم اضغط التفعيل مرة أخرى.',
-          );
+          throw StateError('وافق على طلب VPN من Android، ثم ارجع للتطبيق واضغط التفعيل.');
         }
       } else {
         await bridge.stopNetworkShield();
       }
-      await database.addEvent(action: enabled ? 'NETWORK_ON' : 'NETWORK_OFF');
+      await Future<void>.delayed(const Duration(milliseconds: 400));
       await refreshAll();
+      await _audit(action: enabled ? 'NETWORK_ON' : 'NETWORK_OFF');
     });
   }
 
   Future<void> openExactAlarmSettings() => bridge.openExactAlarmSettings();
   Future<void> openPrivacySettings() => bridge.openPrivacySettings();
+  Future<void> openDeviceAdminSettings() => bridge.openDeviceAdminSettings();
 
-  int blockedCount(SensorType sensor) =>
-      apps.where((app) => isBlocked(app, sensor)).length;
+  int blockedCount(SensorType sensor) => apps.where((app) => isBlocked(app, sensor)).length;
+
+  int get protectableAppCount => apps.where((app) => app.enabled && !app.criticalSystem).length;
+
+  Future<void> _audit({
+    required String action,
+    String? packageName,
+    String? appLabel,
+    String? sensor,
+    String? details,
+  }) async {
+    try {
+      await database.addEvent(
+        action: action,
+        packageName: packageName,
+        appLabel: appLabel,
+        sensor: sensor,
+        details: details,
+      );
+      events = await database.loadEvents();
+      auditWarning = null;
+    } catch (e) {
+      auditWarning = 'تم تنفيذ الحماية، لكن تعذر حفظ السجل المحلي: ${_friendlyError(e)}';
+    }
+    notifyListeners();
+  }
+
+  Future<void> _savePolicyBestEffort(AppPolicy policy) async {
+    try {
+      await database.savePolicy(policy);
+    } catch (e) {
+      auditWarning = 'تعذر تحديث Cache المحلي، وحالة Android Native هي المرجع: ${_friendlyError(e)}';
+    }
+  }
 
   Future<void> _runBusy(Future<void> Function() action) async {
-    if (busy) {
-      return;
-    }
+    if (busy) return;
     busy = true;
     error = null;
     notifyListeners();
@@ -267,9 +312,7 @@ class PrivacyController extends ChangeNotifier {
   }
 
   String _friendlyError(Object error) {
-    if (error is PlatformException) {
-      return error.message ?? error.code;
-    }
+    if (error is PlatformException) return error.message ?? error.code;
     return error.toString().replaceFirst('Bad state: ', '');
   }
 
