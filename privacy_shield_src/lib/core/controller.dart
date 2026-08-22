@@ -92,16 +92,23 @@ class PrivacyController extends ChangeNotifier {
         () => AppPolicy(packageName: app.packageName, label: app.label),
       );
 
-  bool isBlocked(ManagedApp app, SensorType sensor) => policyFor(app).blocked(sensor);
+  bool isBlocked(ManagedApp app, SensorType sensor) =>
+      policyFor(app).blocked(sensor);
 
   ActiveSession? sessionFor(String packageName, SensorType sensor) {
     for (final session in sessions) {
-      if (session.packageName == packageName && session.sensor == sensor) return session;
+      if (session.packageName == packageName && session.sensor == sensor) {
+        return session;
+      }
     }
     return null;
   }
 
-  Future<void> setBlocked(ManagedApp app, SensorType sensor, bool blocked) async {
+  Future<void> setBlocked(
+    ManagedApp app,
+    SensorType sensor,
+    bool blocked,
+  ) async {
     if (!status.isDeviceOwner) {
       throw StateError('يلزم تفعيل وضع Device Owner لفرض السياسة فعليًا.');
     }
@@ -180,7 +187,9 @@ class PrivacyController extends ChangeNotifier {
       final failures = <String>[];
       for (final app in apps.where((a) => !a.systemApp)) {
         for (final sensor in SensorType.values) {
-          if (!app.supports(sensor)) continue;
+          if (!app.supports(sensor)) {
+            continue;
+          }
           try {
             await bridge.setBlocked(app.packageName, sensor, true);
           } catch (_) {
@@ -192,7 +201,8 @@ class PrivacyController extends ChangeNotifier {
       try {
         await database.addEvent(
           action: 'PROTECT_ALL',
-          details: failures.isEmpty ? 'all enforced' : 'failures=${failures.length}',
+          details:
+              failures.isEmpty ? 'all enforced' : 'failures=${failures.length}',
         );
       } catch (_) {}
       if (failures.isNotEmpty) {
@@ -206,7 +216,10 @@ class PrivacyController extends ChangeNotifier {
   Future<void> repairPolicies() async {
     await _runBusy(() async {
       final repaired = await bridge.repairPolicies();
-      await database.addEvent(action: 'REPAIR', details: '$repaired policy entries');
+      await database.addEvent(
+        action: 'REPAIR',
+        details: '$repaired policy entries',
+      );
       await refreshAll();
     });
   }
@@ -216,7 +229,9 @@ class PrivacyController extends ChangeNotifier {
       if (enabled) {
         final started = await bridge.startNetworkShield();
         if (!started) {
-          throw StateError('وافق على طلب VPN من Android ثم اضغط التفعيل مرة أخرى.');
+          throw StateError(
+            'وافق على طلب VPN من Android ثم اضغط التفعيل مرة أخرى.',
+          );
         }
       } else {
         await bridge.stopNetworkShield();
@@ -229,10 +244,13 @@ class PrivacyController extends ChangeNotifier {
   Future<void> openExactAlarmSettings() => bridge.openExactAlarmSettings();
   Future<void> openPrivacySettings() => bridge.openPrivacySettings();
 
-  int blockedCount(SensorType sensor) => apps.where((app) => isBlocked(app, sensor)).length;
+  int blockedCount(SensorType sensor) =>
+      apps.where((app) => isBlocked(app, sensor)).length;
 
   Future<void> _runBusy(Future<void> Function() action) async {
-    if (busy) return;
+    if (busy) {
+      return;
+    }
     busy = true;
     error = null;
     notifyListeners();
@@ -249,7 +267,9 @@ class PrivacyController extends ChangeNotifier {
   }
 
   String _friendlyError(Object error) {
-    if (error is PlatformException) return error.message ?? error.code;
+    if (error is PlatformException) {
+      return error.message ?? error.code;
+    }
     return error.toString().replaceFirst('Bad state: ', '');
   }
 
