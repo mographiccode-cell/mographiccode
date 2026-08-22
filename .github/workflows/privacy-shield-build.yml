@@ -1,11 +1,8 @@
 name: Privacy Shield Android Build
 
 on:
-  push:
-    branches: [ privacy-shield-build ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   build:
@@ -68,5 +65,3 @@ jobs:
             privacy_shield/APK_SHA256.txt
           if-no-files-found: error
           retention-days: 7
-
-# Temporary CI synchronization marker 1
