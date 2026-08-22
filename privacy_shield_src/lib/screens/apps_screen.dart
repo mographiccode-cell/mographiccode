@@ -211,7 +211,7 @@ class _SensorRow extends StatelessWidget {
                     : 'قفل الآن • متبقٍ $seconds ثانية',
               ),
             )
-          else if (blocked && controller.status.fullProtectionReady)
+          else if (blocked && controller.status.temporaryAccessReady)
             Wrap(
               alignment: WrapAlignment.end,
               spacing: 6,
