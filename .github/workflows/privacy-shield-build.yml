@@ -1,0 +1,67 @@
+name: Privacy Shield Android Build
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+      - name: Decode source
+        run: |
+          mkdir -p privacy_shield
+          base64 -d privacy_shield_source.b64 > /tmp/privacy_shield_source.tgz
+          tar -xzf /tmp/privacy_shield_source.tgz -C privacy_shield
+      - name: Generate Flutter Android shell
+        working-directory: privacy_shield
+        run: |
+          flutter create --platforms=android --org com.privacyshield --project-name privacy_shield .
+          rm -f test/widget_test.dart
+      - name: Apply hardened Android native layer
+        working-directory: privacy_shield
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/privacyshield/privacy_shield
+          mkdir -p android/app/src/main/res/xml
+          cp native/android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          cp native/android/kotlin/*.kt android/app/src/main/kotlin/com/privacyshield/privacy_shield/
+          cp native/android/res/xml/*.xml android/app/src/main/res/xml/
+      - name: Dependencies
+        working-directory: privacy_shield
+        run: flutter pub get
+      - name: Format
+        working-directory: privacy_shield
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze
+        working-directory: privacy_shield
+        run: flutter analyze --fatal-infos
+      - name: Unit tests
+        working-directory: privacy_shield
+        run: flutter test
+      - name: Verify no self sensor permissions
+        working-directory: privacy_shield
+        run: |
+          ! grep -q '<uses-permission android:name="android.permission.CAMERA"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.RECORD_AUDIO"' android/app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"' android/app/src/main/AndroidManifest.xml
+      - name: Build debug APK
+        working-directory: privacy_shield
+        run: flutter build apk --debug
+      - name: APK checksum
+        working-directory: privacy_shield
+        run: sha256sum build/app/outputs/flutter-apk/app-debug.apk | tee APK_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: privacy-shield-apk
+          path: |
+            privacy_shield/build/app/outputs/flutter-apk/app-debug.apk
+            privacy_shield/APK_SHA256.txt
+          if-no-files-found: error
+          retention-days: 7
