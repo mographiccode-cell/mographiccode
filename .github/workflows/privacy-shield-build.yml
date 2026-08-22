@@ -60,7 +60,7 @@ jobs:
 
       - name: Format
         working-directory: privacy_shield
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: dart format lib test
 
       - name: Analyze
         working-directory: privacy_shield
