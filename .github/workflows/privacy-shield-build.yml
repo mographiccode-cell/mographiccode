@@ -3,6 +3,8 @@ name: Privacy Shield Android Build
 on:
   push:
     branches: [ privacy-shield-build ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -39,7 +41,7 @@ jobs:
         run: flutter pub get
       - name: Format
         working-directory: privacy_shield
-        run: dart format lib test
+        run: dart format --output=none --set-exit-if-changed lib test
       - name: Analyze
         working-directory: privacy_shield
         run: flutter analyze --fatal-infos
