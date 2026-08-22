@@ -27,45 +27,49 @@ class MainActivity : FlutterActivity() {
             try {
                 val manager = NativePolicyManager(this)
                 when (call.method) {
-                    "getStatus" -> result.success(statusMap(manager))
+                    "getStatus" -> runAsync(result) { statusMap(manager) }
                     "getSetupDiagnostics" -> result.success(setupDiagnostics(manager))
                     "listApps" -> runAsync(result) { listApps() }
                     "getBlockedPolicies" -> runAsync(result) { manager.blockedPolicies() }
-                    "setBlocked" -> {
+                    "setBlocked" -> runAsync(result) {
                         manager.setBlocked(call.arg("packageName"), call.arg("sensor"), call.arg("blocked"))
-                        result.success(null)
+                        null
                     }
-                    "temporaryGrant" -> {
+                    "temporaryGrant" -> runAsync(result) {
                         manager.temporaryGrant(
                             call.arg("packageName"),
                             call.arg("sensor"),
                             (call.argument<Number>("durationMs") ?: 120000).toLong(),
                         )
-                        result.success(null)
+                        null
                     }
-                    "revokeNow" -> {
+                    "revokeNow" -> runAsync(result) {
                         manager.revokeNow(call.arg("packageName"), call.arg("sensor"))
-                        result.success(null)
+                        null
                     }
-                    "getActiveSessions" -> result.success(manager.activeSessions())
-                    "setPanic" -> {
+                    "getActiveSessions" -> runAsync(result) { manager.activeSessions() }
+                    "setPanic" -> runAsync(result) {
                         manager.setPanic(call.arg("enabled"))
-                        result.success(null)
+                        null
                     }
                     "repairPolicies" -> runAsync(result) { manager.repairPolicies() }
                     "launchApp" -> result.success(launchTarget(call.arg("packageName")))
                     "openExactAlarmSettings" -> {
-                        openExactAlarmSettings(); result.success(null)
+                        openExactAlarmSettings()
+                        result.success(null)
                     }
                     "openPrivacySettings" -> {
-                        startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS)); result.success(null)
+                        startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS))
+                        result.success(null)
                     }
                     "openDeviceAdminSettings" -> {
-                        startActivity(Intent(Settings.ACTION_DEVICE_ADMIN_SETTINGS)); result.success(null)
+                        startActivity(Intent(Settings.ACTION_DEVICE_ADMIN_SETTINGS))
+                        result.success(null)
                     }
                     "startNetworkShield" -> result.success(startNetworkShield())
                     "stopNetworkShield" -> {
-                        stopService(Intent(this, NetworkShieldService::class.java)); result.success(null)
+                        stopService(Intent(this, NetworkShieldService::class.java))
+                        result.success(null)
                     }
                     "trackerStats" -> result.success(mapOf("blockedToday" to NetworkShieldService.blockedToday(this)))
                     else -> result.notImplemented()
