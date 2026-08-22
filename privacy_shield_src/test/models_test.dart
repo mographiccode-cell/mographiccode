@@ -10,17 +10,47 @@ void main() {
     expect(policy.blocked(SensorType.location), isFalse);
   });
 
-  test('full protection is strict', () {
-    const good = NativeStatus(
+  test('temporary access readiness does not depend on exact alarm', () {
+    const readyWithoutExactAlarm = NativeStatus(
       isDeviceOwner: true,
       canGrantSensors: true,
+      canScheduleExactAlarms: false,
+      watchdogRunning: true,
+    );
+    const noSensorGrantControl = NativeStatus(
+      isDeviceOwner: true,
+      canGrantSensors: false,
       canScheduleExactAlarms: true,
     );
-    const missingAlarm = NativeStatus(
-      isDeviceOwner: true,
-      canGrantSensors: true,
-    );
-    expect(good.fullProtectionReady, isTrue);
-    expect(missingAlarm.fullProtectionReady, isFalse);
+    expect(readyWithoutExactAlarm.fullProtectionReady, isTrue);
+    expect(noSensorGrantControl.fullProtectionReady, isFalse);
+  });
+
+  test('managed app parses critical and preinstalled states separately', () {
+    final app = ManagedApp.fromMap(<dynamic, dynamic>{
+      'packageName': 'com.google.android.youtube',
+      'label': 'YouTube',
+      'hasCamera': true,
+      'hasMicrophone': true,
+      'hasLocation': true,
+      'systemApp': true,
+      'criticalSystem': false,
+      'enabled': true,
+    });
+    expect(app.systemApp, isTrue);
+    expect(app.criticalSystem, isFalse);
+    expect(app.enabled, isTrue);
+    expect(app.supports(SensorType.camera), isTrue);
+  });
+
+  test('expired session can surface pending fail-closed revocation', () {
+    final session = ActiveSession.fromMap(<dynamic, dynamic>{
+      'packageName': 'test.package',
+      'sensor': 'camera',
+      'remainingMs': 0,
+      'revocationPending': true,
+    });
+    expect(session.remainingMs, 0);
+    expect(session.revocationPending, isTrue);
   });
 }
