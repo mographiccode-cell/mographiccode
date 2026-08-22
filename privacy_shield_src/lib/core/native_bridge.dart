@@ -10,9 +10,13 @@ class NativeBridge {
     return NativeStatus.fromMap(map ?? <dynamic, dynamic>{});
   }
 
+  Future<SetupDiagnostics> getSetupDiagnostics() async {
+    final map = await _channel.invokeMapMethod<dynamic, dynamic>('getSetupDiagnostics');
+    return SetupDiagnostics.fromMap(map ?? <dynamic, dynamic>{});
+  }
+
   Future<Map<String, Set<SensorType>>> getBlockedPolicies() async {
-    final list =
-        await _channel.invokeListMethod<dynamic>('getBlockedPolicies') ?? <dynamic>[];
+    final list = await _channel.invokeListMethod<dynamic>('getBlockedPolicies') ?? <dynamic>[];
     final result = <String, Set<SensorType>>{};
     for (final item in list) {
       final map = item as Map<dynamic, dynamic>;
@@ -55,8 +59,7 @@ class NativeBridge {
       });
 
   Future<List<ActiveSession>> getActiveSessions() async {
-    final list =
-        await _channel.invokeListMethod<dynamic>('getActiveSessions') ?? <dynamic>[];
+    final list = await _channel.invokeListMethod<dynamic>('getActiveSessions') ?? <dynamic>[];
     return list
         .map((item) => ActiveSession.fromMap(item as Map<dynamic, dynamic>))
         .toList();
@@ -79,6 +82,9 @@ class NativeBridge {
 
   Future<void> openPrivacySettings() =>
       _channel.invokeMethod<void>('openPrivacySettings');
+
+  Future<void> openDeviceAdminSettings() =>
+      _channel.invokeMethod<void>('openDeviceAdminSettings');
 
   Future<bool> startNetworkShield() async =>
       (await _channel.invokeMethod<bool>('startNetworkShield')) ?? false;
