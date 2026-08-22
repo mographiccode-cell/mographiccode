@@ -12,6 +12,7 @@ import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.system.OsConstants
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -37,11 +38,23 @@ class NetworkShieldService : VpnService() {
             stopShield()
             return START_NOT_STICKY
         }
-        if (!running) startShield()
+        if (!running) {
+            try {
+                startShield()
+            } catch (t: Throwable) {
+                prefs().edit()
+                    .putBoolean(KEY_ENABLED, false)
+                    .putString(KEY_LAST_ERROR, t.message ?: t.javaClass.simpleName)
+                    .apply()
+                stopShield()
+                return START_NOT_STICKY
+            }
+        }
         return START_STICKY
     }
 
     override fun onRevoke() {
+        prefs().edit().putString(KEY_LAST_ERROR, "VPN authorization revoked by Android").apply()
         stopShield()
         super.onRevoke()
     }
@@ -79,7 +92,11 @@ class NetworkShieldService : VpnService() {
             ?: throw IllegalStateException("تعذر إنشاء Local VPN")
 
         running = true
-        prefs().edit().putBoolean(KEY_ENABLED, true).apply()
+        prefs().edit()
+            .putBoolean(KEY_ENABLED, true)
+            .remove(KEY_LAST_ERROR)
+            .apply()
+
         val fd = tunnel!!.fileDescriptor
         val input = FileInputStream(fd)
         val output = FileOutputStream(fd)
@@ -112,12 +129,15 @@ class NetworkShieldService : VpnService() {
         val domain = parseQuestionName(dnsQuery) ?: return
         if (isBlockedDomain(domain)) {
             incrementBlocked()
-            val nxdomain = buildNxDomain(dnsQuery)
-            writeDnsResponse(packet, nxdomain, output)
+            writeDnsResponse(packet, buildNxDomain(dnsQuery), output)
             return
         }
 
-        val network = underlyingNetwork() ?: return
+        val network = underlyingNetwork()
+        if (network == null) {
+            writeDnsResponse(packet, buildServFail(dnsQuery), output)
+            return
+        }
         DnsResolver.getInstance().rawQuery(
             network,
             dnsQuery,
@@ -126,7 +146,11 @@ class NetworkShieldService : VpnService() {
             CancellationSignal(),
             object : DnsResolver.Callback<ByteArray> {
                 override fun onAnswer(answer: ByteArray, rcode: Int) {
-                    writeDnsResponse(packet, answer, output)
+                    if (answer.size <= MAX_DNS_PAYLOAD) {
+                        writeDnsResponse(packet, answer, output)
+                    } else {
+                        writeDnsResponse(packet, buildServFail(dnsQuery), output)
+                    }
                 }
 
                 override fun onError(error: DnsResolver.DnsException) {
@@ -140,6 +164,7 @@ class NetworkShieldService : VpnService() {
         val ipHeaderLength = (requestPacket[0].toInt() and 0x0F) * 4
         val requestUdp = ipHeaderLength
         val totalLength = 20 + 8 + dnsResponse.size
+        if (totalLength > 65535) return
         val response = ByteArray(totalLength)
         response[0] = 0x45
         response[1] = 0
@@ -221,12 +246,6 @@ class NetworkShieldService : VpnService() {
     }
 
     private fun stopShield() {
-        if (!running && tunnel == null) {
-            prefs().edit().putBoolean(KEY_ENABLED, false).apply()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
         running = false
         runCatching { tunnel?.close() }
         tunnel = null
@@ -252,8 +271,10 @@ class NetworkShieldService : VpnService() {
         private const val NOTIFICATION_ID = 2001
         private const val PREFS = "network_shield"
         private const val KEY_ENABLED = "enabled"
+        private const val KEY_LAST_ERROR = "last_error"
         private const val KEY_DAY = "day"
         private const val KEY_BLOCKED_TODAY = "blocked_today"
+        private const val MAX_DNS_PAYLOAD = 1400
 
         private val BLOCKLIST = setOf(
             "doubleclick.net",
@@ -266,10 +287,35 @@ class NetworkShieldService : VpnService() {
             "branch.io",
             "mixpanel.com",
             "amplitude.com",
+            "firebase-settings.crashlytics.com",
+            "crashlytics.com",
+            "segment.io",
+            "segment.com",
+            "hotjar.com",
+            "fullstory.com",
+            "newrelic.com",
+            "bugsnag.com",
+            "sentry.io",
         )
 
-        fun isEnabled(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+        fun isActuallyRunning(context: Context): Boolean {
+            val cm = context.getSystemService(ConnectivityManager::class.java)
+            return cm.allNetworks.any { network ->
+                val caps = cm.getNetworkCapabilities(network) ?: return@any false
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) && caps.ownerUid == Process.myUid()
+            }
+        }
+
+        fun hasOtherVpn(context: Context): Boolean {
+            val cm = context.getSystemService(ConnectivityManager::class.java)
+            return cm.allNetworks.any { network ->
+                val caps = cm.getNetworkCapabilities(network) ?: return@any false
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) && caps.ownerUid != Process.myUid()
+            }
+        }
+
+        fun lastError(context: Context): String? =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LAST_ERROR, null)
 
         fun blockedToday(context: Context): Int {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
