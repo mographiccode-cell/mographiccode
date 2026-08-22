@@ -77,8 +77,14 @@ class PrivacyController extends ChangeNotifier {
 
   Future<void> refreshSessions() async {
     try {
-      sessions = await bridge.getActiveSessions();
-      status = await bridge.getStatus();
+      final hadSessions = sessions.isNotEmpty;
+      final updated = await bridge.getActiveSessions();
+      sessions = updated;
+      final stateChanged = hadSessions != updated.isNotEmpty;
+      final retryPending = updated.any((session) => session.revocationPending);
+      if (stateChanged || retryPending) {
+        status = await bridge.getStatus();
+      }
       notifyListeners();
     } catch (_) {
       // Android alarms + foreground watchdog enforce expiry independently of UI.
