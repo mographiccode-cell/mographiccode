@@ -16,25 +16,43 @@ class PrivacyTileService : TileService() {
         super.onClick()
         val manager = NativePolicyManager(this)
         if (!manager.isDeviceOwner) {
-            val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            @Suppress("DEPRECATION")
-            if (Build.VERSION.SDK_INT >= 34) {
-                val pi = PendingIntent.getActivity(this, 10, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                startActivityAndCollapse(pi)
-            } else {
-                startActivityAndCollapse(intent)
-            }
+            openApp()
             return
         }
-        runCatching { manager.setPanic(!manager.panicEnabled) }
+        val success = runCatching { manager.setPanic(!manager.panicEnabled) }.isSuccess
         updateTile()
+        if (!success || manager.panicDegraded) openApp()
+    }
+
+    private fun openApp() {
+        val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        @Suppress("DEPRECATION")
+        if (Build.VERSION.SDK_INT >= 34) {
+            val pi = PendingIntent.getActivity(
+                this,
+                10,
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            startActivityAndCollapse(pi)
+        } else {
+            startActivityAndCollapse(intent)
+        }
     }
 
     private fun updateTile() {
         val manager = NativePolicyManager(this)
         qsTile?.apply {
-            state = if (manager.isDeviceOwner && manager.panicEnabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-            label = if (manager.panicEnabled) "Privacy: LOCKED" else "Privacy Shield"
+            state = when {
+                manager.panicDegraded -> Tile.STATE_UNAVAILABLE
+                manager.isDeviceOwner && manager.panicEnabled -> Tile.STATE_ACTIVE
+                else -> Tile.STATE_INACTIVE
+            }
+            label = when {
+                manager.panicDegraded -> "Privacy: REPAIR"
+                manager.panicEnabled -> "Privacy: LOCKED"
+                else -> "Privacy Shield"
+            }
             updateTile()
         }
     }
