@@ -196,21 +196,27 @@ class _ProtectionHero extends StatelessWidget {
     final status = controller.status;
     final (title, subtitle, icon) = status.fullProtectionReady
         ? (
-            'الحماية المدارة جاهزة',
-            'Android Device Owner يستطيع فرض DENIED وفتح الحساس مؤقتًا ثم إعادة القفل تلقائيًا.',
+            'Full Protection جاهزة',
+            'Device Owner + Sensor Grant Control + Exact Alarm مفعّلة، مع Foreground Watchdog كطبقة مستقلة.',
             Icons.verified_user,
           )
-        : status.isDeviceOwner
+        : status.temporaryAccessReady
             ? (
-                'المنع يعمل — الفتح المؤقت محدود',
-                'Device Owner فعال لكن Android لا يسمح لهذا provisioning بمنح صلاحيات الحساسات مؤقتًا.',
+                'الحماية المدارة فعالة',
+                'DENIED والفتح المؤقت وWatchdog تعمل. فعّل Exact Alarm لإضافة طبقة إعادة قفل مستقلة إذا قتل النظام العملية.',
                 Icons.shield,
               )
-            : (
-                'الحماية الكاملة غير مفعّلة',
-                'لا يمكن لتطبيق Android عادي التحكم في صلاحيات التطبيقات الأخرى. أكمل Device Owner من الإعدادات.',
-                Icons.info_outline,
-              );
+            : status.isDeviceOwner
+                ? (
+                    'المنع يعمل — Temporary Access غير متاح',
+                    'Device Owner فعال لكن provisioning الحالي لا يسمح بمنح صلاحيات الحساسات مؤقتًا.',
+                    Icons.shield_outlined,
+                  )
+                : (
+                    'الحماية الكاملة غير مفعّلة',
+                    'لا يمكن لتطبيق Android عادي التحكم في صلاحيات التطبيقات الأخرى. أكمل Device Owner من الإعدادات.',
+                    Icons.info_outline,
+                  );
 
     return Card(
       child: Padding(
