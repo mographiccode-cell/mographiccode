@@ -38,7 +38,9 @@ class PrivacyController extends ChangeNotifier {
       }
       await refreshAll();
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (sessions.isNotEmpty) unawaited(refreshSessions());
+        if (sessions.isNotEmpty) {
+          unawaited(refreshSessions());
+        }
       });
     } catch (e) {
       error = _friendlyError(e);
@@ -115,7 +117,9 @@ class PrivacyController extends ChangeNotifier {
 
   ActiveSession? sessionFor(String packageName, SensorType sensor) {
     for (final session in sessions) {
-      if (session.packageName == packageName && session.sensor == sensor) return session;
+      if (session.packageName == packageName && session.sensor == sensor) {
+        return session;
+      }
     }
     return null;
   }
@@ -196,14 +200,18 @@ class PrivacyController extends ChangeNotifier {
   }
 
   Future<void> protectAllSensitiveApps() async {
-    if (!status.isDeviceOwner) throw StateError('يلزم Device Owner.');
+    if (!status.isDeviceOwner) {
+      throw StateError('يلزم Device Owner.');
+    }
     await _runBusy(() async {
       final failures = <String>[];
       var changed = 0;
       final targets = apps.where((app) => app.enabled && !app.criticalSystem);
       for (final app in targets) {
         for (final sensor in SensorType.values) {
-          if (!app.supports(sensor)) continue;
+          if (!app.supports(sensor)) {
+            continue;
+          }
           try {
             await bridge.setBlocked(app.packageName, sensor, true);
             changed++;
@@ -256,9 +264,11 @@ class PrivacyController extends ChangeNotifier {
   Future<void> openPrivacySettings() => bridge.openPrivacySettings();
   Future<void> openDeviceAdminSettings() => bridge.openDeviceAdminSettings();
 
-  int blockedCount(SensorType sensor) => apps.where((app) => isBlocked(app, sensor)).length;
+  int blockedCount(SensorType sensor) =>
+      apps.where((app) => isBlocked(app, sensor)).length;
 
-  int get protectableAppCount => apps.where((app) => app.enabled && !app.criticalSystem).length;
+  int get protectableAppCount =>
+      apps.where((app) => app.enabled && !app.criticalSystem).length;
 
   Future<void> _audit({
     required String action,
@@ -292,7 +302,9 @@ class PrivacyController extends ChangeNotifier {
   }
 
   Future<void> _runBusy(Future<void> Function() action) async {
-    if (busy) return;
+    if (busy) {
+      return;
+    }
     busy = true;
     error = null;
     notifyListeners();
@@ -309,7 +321,9 @@ class PrivacyController extends ChangeNotifier {
   }
 
   String _friendlyError(Object error) {
-    if (error is PlatformException) return error.message ?? error.code;
+    if (error is PlatformException) {
+      return error.message ?? error.code;
+    }
     return error.toString().replaceFirst('Bad state: ', '');
   }
 
