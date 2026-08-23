@@ -58,6 +58,7 @@ jobs:
           mkdir smart_shipping_compare
           tar -xJf /tmp/smart_shipping_final.tar.xz -C smart_shipping_compare
           cd smart_shipping_compare
+          python3 ../smart_shipping_ci_patch/fix_analyzer_round1.py
           flutter create . --platforms=android --org sa.edu.aou --project-name smart_shipping_compare
           rm -f test/widget_test.dart
           python3 tools/prepare_android.py
