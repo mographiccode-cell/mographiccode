@@ -1,0 +1,163 @@
+name: Smart Shipping Android Runtime Gate
+
+on:
+  push:
+    branches:
+      - smart-shipping-runtime-20260822
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smart-shipping-runtime
+  cancel-in-progress: true
+
+jobs:
+  quality-build-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+
+      - name: Restore final shipping project
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f /tmp/smart_shipping_final.tar.xz
+
+          base64 --decode smart_shipping_final_payload/p01.b64 >> /tmp/smart_shipping_final.tar.xz
+          for i in 1 2 3 4; do
+            base64 --decode "smart_shipping_final_payload/p02_${i}.b64" >> /tmp/smart_shipping_final.tar.xz
+          done
+          for i in 03 04 05 06 07 08 09 10 11 12 13; do
+            base64 --decode "smart_shipping_final_payload/p${i}.b64" >> /tmp/smart_shipping_final.tar.xz
+          done
+
+          echo "0627b167872d5045ad9ae6f354a0987deba569a93fe0701d748d7ddf5f5696a0  /tmp/smart_shipping_final.tar.xz" | sha256sum --check --strict
+          xz -t /tmp/smart_shipping_final.tar.xz
+
+          rm -rf smart_shipping_compare
+          mkdir smart_shipping_compare
+          tar -xJf /tmp/smart_shipping_final.tar.xz -C smart_shipping_compare
+          cd smart_shipping_compare
+          python3 ../smart_shipping_ci_patch/fix_analyzer_round1.py
+          flutter create . --platforms=android --org sa.edu.aou --project-name smart_shipping_compare
+          rm -f test/widget_test.dart
+          python3 tools/prepare_android.py
+
+      - name: Data quality, format, analyze, and unit tests
+        working-directory: smart_shipping_compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_reference_assets.py
+          python3 tools/audit_seed.py
+          python3 tools/validate_seed.py
+          flutter pub get
+          dart format lib test integration_test
+          flutter analyze --fatal-infos
+          flutter test --reporter expanded
+          ! grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.ACCESS_FINE_LOCATION' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.ACCESS_COARSE_LOCATION' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.READ_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.WRITE_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml
+
+      - name: Build release APK
+        working-directory: smart_shipping_compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build apk --release
+
+      - name: Android 15 functional flow and runtime tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          working-directory: smart_shipping_compare
+          script: |
+            set -euo pipefail
+            flutter test integration_test/app_flow_test.dart -d emulator-5554 --reporter expanded
+
+            PACKAGE=sa.edu.aou.smart_shipping_compare
+            APK=build/app/outputs/flutter-apk/app-release.apk
+            adb uninstall "$PACKAGE" || true
+            adb install -r "$APK"
+            adb logcat -c
+            adb shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1
+            sleep 6
+            test -n "$(adb shell pidof "$PACKAGE" | tr -d '\r')"
+            adb logcat -d > /tmp/shipping-logcat.txt
+            if grep -A 30 -B 3 'FATAL EXCEPTION' /tmp/shipping-logcat.txt | grep -q "$PACKAGE"; then
+              echo "Fatal exception detected for $PACKAGE"
+              exit 1
+            fi
+
+      - name: Capture release metadata and package full source
+        working-directory: smart_shipping_compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum build/app/outputs/flutter-apk/app-release.apk | tee APK_SHA256.txt
+          stat -c '%s bytes' build/app/outputs/flutter-apk/app-release.apk | tee APK_SIZE.txt
+          flutter --version | tee FLUTTER_VERSION.txt
+          rm -f /tmp/Smart_Shipping_Compare_Source_Full.zip
+          zip -qr /tmp/Smart_Shipping_Compare_Source_Full.zip . -x './build/*' './.dart_tool/*' './.git/*'
+          sha256sum /tmp/Smart_Shipping_Compare_Source_Full.zip | tee SOURCE_SHA256.txt
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-shipping-android-verified
+          path: |
+            smart_shipping_compare/build/app/outputs/flutter-apk/app-release.apk
+            smart_shipping_compare/APK_SHA256.txt
+            smart_shipping_compare/APK_SIZE.txt
+            smart_shipping_compare/FLUTTER_VERSION.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload full source code
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-shipping-source-full
+          path: |
+            /tmp/Smart_Shipping_Compare_Source_Full.zip
+            smart_shipping_compare/SOURCE_SHA256.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload runtime diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-shipping-runtime-diagnostics
+          path: |
+            /tmp/shipping-logcat.txt
+            smart_shipping_compare/build/
+          if-no-files-found: ignore
+          retention-days: 7
