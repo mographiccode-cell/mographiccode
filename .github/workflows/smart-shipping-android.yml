@@ -42,16 +42,27 @@ jobs:
         run: |
           set -euo pipefail
           rm -f /tmp/smart_shipping_source.zip /tmp/smart_shipping_overlay.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, re
 
-          for i in 01 02 03 04 05 06 07; do
-            base64 --decode "smart_shipping_ci/part_${i}.b64" >> /tmp/smart_shipping_source.zip
-          done
-          echo "04c660f7eb14d94c454974ebd83e0a4b1709b87df3dfb7d70a9a1b3fe288759a  /tmp/smart_shipping_source.zip" | sha256sum --check --strict
+          def decode_parts(pattern, out_path, expected_sha):
+              parts = sorted(Path('.').glob(pattern))
+              if not parts:
+                  raise SystemExit(f'No chunks found: {pattern}')
+              text = ''.join(p.read_text(encoding='utf-8-sig', errors='ignore') for p in parts)
+              clean = re.sub(r'[^A-Za-z0-9+/=]', '', text)
+              clean += '=' * (-len(clean) % 4)
+              raw = base64.b64decode(clean, validate=False)
+              Path(out_path).write_bytes(raw)
+              actual = hashlib.sha256(raw).hexdigest()
+              print(f'{pattern}: parts={len(parts)} chars={len(text)} clean={len(clean)} bytes={len(raw)} sha256={actual}')
+              if actual != expected_sha:
+                  raise SystemExit(f'SHA mismatch for {pattern}: expected {expected_sha}, got {actual}')
 
-          for i in 01 02 03 04 05 06 07 08; do
-            base64 --decode "smart_shipping_overlay/overlay_${i}.b64" >> /tmp/smart_shipping_overlay.zip
-          done
-          echo "3972fd1bf30b31d38928545ef9cad8c4e142264e0c4932461e42ba57caf10516  /tmp/smart_shipping_overlay.zip" | sha256sum --check --strict
+          decode_parts('smart_shipping_ci/part_*.b64', '/tmp/smart_shipping_source.zip', '04c660f7eb14d94c454974ebd83e0a4b1709b87df3dfb7d70a9a1b3fe288759a')
+          decode_parts('smart_shipping_overlay/overlay_*.b64', '/tmp/smart_shipping_overlay.zip', '3972fd1bf30b31d38928545ef9cad8c4e142264e0c4932461e42ba57caf10516')
+          PY
 
           rm -rf smart_shipping_compare
           mkdir smart_shipping_compare
