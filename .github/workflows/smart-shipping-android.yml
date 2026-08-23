@@ -68,9 +68,15 @@ jobs:
                           raise RuntimeError(f'Bad ZIP member: {bad}')
                       names = zf.namelist()
               except Exception as exc:
-                  raise SystemExit(f'Invalid reconstructed ZIP for {pattern}: {exc}; chunks={details}; sha256={sha}; bytes={len(raw)}')
+                  raise SystemExit(
+                      f'Invalid reconstructed ZIP for {pattern}: {exc}; '
+                      f'chunks={details}; sha256={sha}; bytes={len(raw)}'
+                  )
               Path(out_path).write_bytes(raw)
-              print(f'{pattern}: parts={len(parts)} bytes={len(raw)} sha256={sha} files={len(names)} chunks={details}')
+              print(
+                  f'{pattern}: parts={len(parts)} bytes={len(raw)} '
+                  f'sha256={sha} files={len(names)} chunks={details}'
+              )
 
           decode_parts('smart_shipping_ci/part_*.b64', '/tmp/smart_shipping_source.zip')
           decode_parts('smart_shipping_overlay/overlay_*.b64', '/tmp/smart_shipping_overlay.zip')
@@ -80,6 +86,7 @@ jobs:
           mkdir smart_shipping_compare
           unzip -q /tmp/smart_shipping_source.zip -d smart_shipping_compare
           unzip -qo /tmp/smart_shipping_overlay.zip -d smart_shipping_compare
+          cp -a smart_shipping_hotfix/. smart_shipping_compare/
           cd smart_shipping_compare
           flutter create . --platforms=android --org sa.edu.aou --project-name smart_shipping_compare
           rm -f test/widget_test.dart
@@ -139,7 +146,7 @@ jobs:
               exit 1
             fi
 
-      - name: Capture APK metadata
+      - name: Capture release metadata and package full source
         working-directory: smart_shipping_compare
         shell: bash
         run: |
@@ -147,6 +154,10 @@ jobs:
           sha256sum build/app/outputs/flutter-apk/app-release.apk | tee APK_SHA256.txt
           stat -c '%s bytes' build/app/outputs/flutter-apk/app-release.apk | tee APK_SIZE.txt
           flutter --version | tee FLUTTER_VERSION.txt
+          rm -f /tmp/Smart_Shipping_Compare_Source_Full.zip
+          zip -qr /tmp/Smart_Shipping_Compare_Source_Full.zip . \
+            -x './build/*' './.dart_tool/*' './.git/*'
+          sha256sum /tmp/Smart_Shipping_Compare_Source_Full.zip | tee SOURCE_SHA256.txt
 
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
@@ -157,6 +168,16 @@ jobs:
             smart_shipping_compare/APK_SHA256.txt
             smart_shipping_compare/APK_SIZE.txt
             smart_shipping_compare/FLUTTER_VERSION.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload full source code
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-shipping-source-full
+          path: |
+            /tmp/Smart_Shipping_Compare_Source_Full.zip
+            smart_shipping_compare/SOURCE_SHA256.txt
           if-no-files-found: error
           retention-days: 7
 
