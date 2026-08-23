@@ -46,20 +46,26 @@ jobs:
           from pathlib import Path
           import base64, hashlib, io, re, zipfile
 
-          def decode_parts(pattern, out_path):
+          def decode_stream(pattern, out_path):
               parts = sorted(Path('.').glob(pattern))
               if not parts:
                   raise SystemExit(f'No chunks found: {pattern}')
-              pieces = []
-              details = []
-              for p in parts:
-                  text = p.read_text(encoding='utf-8-sig', errors='ignore')
-                  clean = re.sub(r'[^A-Za-z0-9+/=]', '', text)
-                  clean += '=' * (-len(clean) % 4)
-                  chunk = base64.b64decode(clean, validate=False)
-                  pieces.append(chunk)
-                  details.append(f'{p.name}:{len(chunk)}')
-              raw = b''.join(pieces)
+              encoded = ''.join(
+                  re.sub(
+                      r'[^A-Za-z0-9+/=]',
+                      '',
+                      p.read_text(encoding='utf-8-sig', errors='ignore'),
+                  )
+                  for p in parts
+              )
+              encoded += '=' * (-len(encoded) % 4)
+              try:
+                  raw = base64.b64decode(encoded, validate=False)
+              except Exception as exc:
+                  raise SystemExit(
+                      f'Cannot decode {pattern}: {exc}; chars={len(encoded)}; '
+                      f'parts={[p.name for p in parts]}'
+                  )
               sha = hashlib.sha256(raw).hexdigest()
               try:
                   with zipfile.ZipFile(io.BytesIO(raw)) as zf:
@@ -70,16 +76,16 @@ jobs:
               except Exception as exc:
                   raise SystemExit(
                       f'Invalid reconstructed ZIP for {pattern}: {exc}; '
-                      f'chunks={details}; sha256={sha}; bytes={len(raw)}'
+                      f'sha256={sha}; bytes={len(raw)}; chars={len(encoded)}'
                   )
               Path(out_path).write_bytes(raw)
               print(
                   f'{pattern}: parts={len(parts)} bytes={len(raw)} '
-                  f'sha256={sha} files={len(names)} chunks={details}'
+                  f'sha256={sha} files={len(names)}'
               )
 
-          decode_parts('smart_shipping_ci/part_*.b64', '/tmp/smart_shipping_source.zip')
-          decode_parts('smart_shipping_overlay/overlay_*.b64', '/tmp/smart_shipping_overlay.zip')
+          decode_stream('smart_shipping_ci/part_*.b64', '/tmp/smart_shipping_source.zip')
+          decode_stream('smart_shipping_overlay/overlay_*.b64', '/tmp/smart_shipping_overlay.zip')
           PY
 
           rm -rf smart_shipping_compare
