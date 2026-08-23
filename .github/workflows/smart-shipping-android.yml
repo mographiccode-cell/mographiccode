@@ -19,7 +19,7 @@ concurrency:
 jobs:
   quality-build-runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,31 +37,49 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Restore shipping project
+      - name: Restore final shipping project
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/shipping_b64
-          cat smart_shipping_ci/part_*.b64 > /tmp/shipping_b64/source.b64
-          base64 --decode /tmp/shipping_b64/source.b64 > /tmp/smart_shipping_source.zip
+          rm -f /tmp/smart_shipping_source.zip /tmp/smart_shipping_overlay.zip
+
+          for i in 01 02 03 04 05 06 07; do
+            base64 --decode "smart_shipping_ci/part_${i}.b64" >> /tmp/smart_shipping_source.zip
+          done
           echo "04c660f7eb14d94c454974ebd83e0a4b1709b87df3dfb7d70a9a1b3fe288759a  /tmp/smart_shipping_source.zip" | sha256sum --check --strict
+
+          for i in 01 02 03 04 05 06 07 08; do
+            base64 --decode "smart_shipping_overlay/overlay_${i}.b64" >> /tmp/smart_shipping_overlay.zip
+          done
+          echo "3972fd1bf30b31d38928545ef9cad8c4e142264e0c4932461e42ba57caf10516  /tmp/smart_shipping_overlay.zip" | sha256sum --check --strict
+
           rm -rf smart_shipping_compare
           mkdir smart_shipping_compare
           unzip -q /tmp/smart_shipping_source.zip -d smart_shipping_compare
+          unzip -qo /tmp/smart_shipping_overlay.zip -d smart_shipping_compare
           cd smart_shipping_compare
           flutter create . --platforms=android --org sa.edu.aou --project-name smart_shipping_compare
           rm -f test/widget_test.dart
           python3 tools/prepare_android.py
 
-      - name: Format, analyze, and test
+      - name: Data quality, format, analyze, and unit tests
         working-directory: smart_shipping_compare
         shell: bash
         run: |
           set -euo pipefail
-          dart format lib test
+          python3 tools/audit_reference_assets.py
+          python3 tools/audit_seed.py
+          python3 tools/validate_seed.py
           flutter pub get
+          dart format lib test integration_test
           flutter analyze --fatal-infos
           flutter test --reporter expanded
+          ! grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.ACCESS_FINE_LOCATION' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.ACCESS_COARSE_LOCATION' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.READ_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.WRITE_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml
 
       - name: Build release APK
         working-directory: smart_shipping_compare
@@ -70,7 +88,7 @@ jobs:
           set -euo pipefail
           flutter build apk --release
 
-      - name: Android emulator smoke test
+      - name: Android 15 functional flow and runtime tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -82,9 +100,12 @@ jobs:
           working-directory: smart_shipping_compare
           script: |
             set -euo pipefail
-            APK=build/app/outputs/flutter-apk/app-release.apk
-            adb install -r "$APK"
+            flutter test integration_test/app_flow_test.dart -d emulator-5554 --reporter expanded
+
             PACKAGE=sa.edu.aou.smart_shipping_compare
+            APK=build/app/outputs/flutter-apk/app-release.apk
+            adb uninstall "$PACKAGE" || true
+            adb install -r "$APK"
             adb logcat -c
             adb shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1
             sleep 6
