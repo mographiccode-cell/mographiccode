@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f /tmp/smart_shipping_source.zip
-          cat smart_shipping_binary/chunk_*.bin > /tmp/smart_shipping_source.zip
+          cat smart_shipping_binary2/chunk_*.bin > /tmp/smart_shipping_source.zip
           file /tmp/smart_shipping_source.zip
           unzip -t /tmp/smart_shipping_source.zip
           rm -rf smart_shipping_compare
