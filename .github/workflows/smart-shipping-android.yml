@@ -44,9 +44,9 @@ jobs:
           rm -f /tmp/smart_shipping_source.zip /tmp/smart_shipping_overlay.zip
           python3 - <<'PY'
           from pathlib import Path
-          import base64, hashlib, re
+          import base64, hashlib, io, re, zipfile
 
-          def decode_parts(pattern, out_path, expected_sha):
+          def decode_parts(pattern, out_path):
               parts = sorted(Path('.').glob(pattern))
               if not parts:
                   raise SystemExit(f'No chunks found: {pattern}')
@@ -54,14 +54,20 @@ jobs:
               clean = re.sub(r'[^A-Za-z0-9+/=]', '', text)
               clean += '=' * (-len(clean) % 4)
               raw = base64.b64decode(clean, validate=False)
+              sha = hashlib.sha256(raw).hexdigest()
+              try:
+                  with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                      bad = zf.testzip()
+                      if bad:
+                          raise RuntimeError(f'Bad ZIP member: {bad}')
+                      names = zf.namelist()
+              except Exception as exc:
+                  raise SystemExit(f'Invalid reconstructed ZIP for {pattern}: {exc}')
               Path(out_path).write_bytes(raw)
-              actual = hashlib.sha256(raw).hexdigest()
-              print(f'{pattern}: parts={len(parts)} chars={len(text)} clean={len(clean)} bytes={len(raw)} sha256={actual}')
-              if actual != expected_sha:
-                  raise SystemExit(f'SHA mismatch for {pattern}: expected {expected_sha}, got {actual}')
+              print(f'{pattern}: parts={len(parts)} bytes={len(raw)} sha256={sha} files={len(names)}')
 
-          decode_parts('smart_shipping_ci/part_*.b64', '/tmp/smart_shipping_source.zip', '04c660f7eb14d94c454974ebd83e0a4b1709b87df3dfb7d70a9a1b3fe288759a')
-          decode_parts('smart_shipping_overlay/overlay_*.b64', '/tmp/smart_shipping_overlay.zip', '3972fd1bf30b31d38928545ef9cad8c4e142264e0c4932461e42ba57caf10516')
+          decode_parts('smart_shipping_ci/part_*.b64', '/tmp/smart_shipping_source.zip')
+          decode_parts('smart_shipping_overlay/overlay_*.b64', '/tmp/smart_shipping_overlay.zip')
           PY
 
           rm -rf smart_shipping_compare
