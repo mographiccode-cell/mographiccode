@@ -1,0 +1,72 @@
+{
+  "benchmark": "PhishLens rebuilt fusion v4",
+  "date": "2026-08-29",
+  "legacy_same_100_cases": {
+    "accuracy": 0.56,
+    "precision": 0.5517241379,
+    "recall": 0.64,
+    "f1": 0.5925925926,
+    "tp": 32,
+    "tn": 24,
+    "fp": 26,
+    "fn": 18
+  },
+  "rebuilt_same_100_cases": {
+    "accuracy": 0.99,
+    "precision": 1.0,
+    "recall": 0.98,
+    "f1": 0.9898989899,
+    "tp": 49,
+    "tn": 50,
+    "fp": 0,
+    "fn": 1,
+    "remaining_missed_case": "P-brand-in-path"
+  },
+  "synthetic_generic_holdout_80": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 40,
+    "tn": 40,
+    "fp": 0,
+    "fn": 0,
+    "scope_note": "Synthetic generic Northstar holdout. Useful regression test, not a production-accuracy claim."
+  },
+  "phreshphish_url_external_test_1000": {
+    "dataset": "PhreshPhish v1.0.1",
+    "selected_blend": {
+      "accuracy": 0.855,
+      "balanced_accuracy": 0.8469738610,
+      "precision": 0.9031413613,
+      "recall": 0.7615894040,
+      "f1": 0.8263473054,
+      "auc": 0.9500466119,
+      "threshold": 0.66,
+      "tp": 345,
+      "tn": 510,
+      "fp": 37,
+      "fn": 108
+    },
+    "lexical_component_at_0_5": {
+      "accuracy": 0.885,
+      "balanced_accuracy": 0.8853973712,
+      "precision": 0.8611111111,
+      "recall": 0.8896247241,
+      "f1": 0.8751357220,
+      "auc": 0.9431133496,
+      "tp": 403,
+      "tn": 482,
+      "fp": 65,
+      "fn": 50
+    }
+  },
+  "architecture": {
+    "url_model": "PhreshPhish-trained hashed character n-grams + lexical logistic component",
+    "hard_url_signals": ["IP host", "userinfo @ confusion", "Punycode", "non-standard port", "brand-domain mismatch", "double encoding", "cross-domain redirects"],
+    "metadata": ["SPF", "DKIM", "DMARC", "Reply-To alignment", "Return-Path alignment", "known official sender-domain alignment"],
+    "text": "PhishLens DistilBERT retained as a secondary signal only",
+    "fusion": "URL-first risk fusion with authenticated-tracker exception and hard-rule overrides"
+  },
+  "important_scope_note": "The 99% result is on a deliberately difficult but synthetic 100-email stress suite used for regression. It is not universal production accuracy. The independent PhreshPhish URL test is the more external URL generalization check. Full Gmail raw-MIME production evaluation still requires a real labelled inbox corpus."
+}
