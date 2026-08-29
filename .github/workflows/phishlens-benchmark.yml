@@ -11,11 +11,13 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run 100-case adversarial benchmark
+      - name: Probe PhreshPhish benchmark files
+        run: python benchmarks/probe_phresh.py
+      - name: Run adversarial benchmark
         run: python benchmarks/phishlens_benchmark.py
