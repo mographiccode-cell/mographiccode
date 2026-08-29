@@ -11,13 +11,22 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install benchmark dependencies
+        run: python -m pip install --quiet pyarrow scipy scikit-learn numpy
       - name: Probe PhreshPhish benchmark files
         run: python benchmarks/probe_phresh.py
-      - name: Run adversarial benchmark
+      - name: Train compact PhreshPhish URL model
+        run: python benchmarks/train_url_model.py
+      - name: Upload compact URL model
+        uses: actions/upload-artifact@v4
+        with:
+          name: phresh-url-model
+          path: url_model_export.json
+      - name: Run adversarial email benchmark
         run: python benchmarks/phishlens_benchmark.py
