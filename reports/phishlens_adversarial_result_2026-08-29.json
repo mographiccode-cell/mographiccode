@@ -1,0 +1,62 @@
+{
+  "benchmark": "PhishLens adversarial email+URL benchmark v2",
+  "date": "2026-08-29",
+  "cases": 100,
+  "class_balance": {"safe": 50, "phishing": 50},
+  "request_errors": 0,
+  "overall": {
+    "accuracy": 0.56,
+    "precision": 0.5517241379,
+    "recall": 0.64,
+    "f1": 0.5925925926,
+    "tp": 32,
+    "tn": 24,
+    "fp": 26,
+    "fn": 18,
+    "false_positive_rate": 0.52,
+    "false_negative_rate": 0.36
+  },
+  "hard_30": {
+    "accuracy": 0.40,
+    "precision": 0.3846153846,
+    "recall": 0.3333333333,
+    "f1": 0.3571428571,
+    "tp": 5,
+    "tn": 7,
+    "fp": 8,
+    "fn": 10
+  },
+  "extreme_30": {
+    "accuracy": 0.4666666667,
+    "precision": 0.4666666667,
+    "recall": 0.4666666667,
+    "f1": 0.4666666667,
+    "tp": 7,
+    "tn": 7,
+    "fp": 8,
+    "fn": 8
+  },
+  "adversarial_40": {
+    "accuracy": 0.75,
+    "precision": 0.6666666667,
+    "recall": 1.0,
+    "f1": 0.80,
+    "tp": 20,
+    "tn": 10,
+    "fp": 10,
+    "fn": 0
+  },
+  "url_patterns_tested": [
+    "brand-looking subdomain on attacker domain",
+    "userinfo @ confusion",
+    "Punycode-like hostname",
+    "IP-literal URL",
+    "non-standard port",
+    "nested redirect parameter",
+    "double URL encoding",
+    "brand name in path or query",
+    "OAuth-style authorize URL",
+    "legitimate tracking and redirect parameters"
+  ],
+  "important_scope_note": "This result measures the current web-paste pipeline calling /analyse with raw_text and sender_email on a deliberately difficult synthetic balanced benchmark. It is not a universal production accuracy and does not reproduce a full Gmail raw-MIME/header integration."
+}
