@@ -50,7 +50,7 @@ jobs:
           main_b64 = clean_b64(['build_assets/v11_main.part1', 'build_assets/v11_main.part2'])
           Path('file_compressor/lib/main.dart').write_bytes(gzip.decompress(base64.b64decode(main_b64)))
 
-          icon_b64 = clean_b64(['build_assets/v11_icon.part1', 'build_assets/v11_icon.part2'])
+          icon_b64 = clean_b64(['build_assets/v11_icon_small.b64'])
           Path('file_compressor/assets/app_icon.jpg').write_bytes(base64.b64decode(icon_b64))
 
           pub_b64 = clean_b64(['build_assets/v11_pubspec.b64'])
@@ -74,7 +74,7 @@ jobs:
           EOF
 
           echo '9e458550808bbea2e9e8749db5f3f5c9df00e34e67b77cc05ea4488b03ec48aa  file_compressor/lib/main.dart' | sha256sum -c -
-          echo 'e0ca39b2cb166b33850dba9ecb6205c4da3334a32514e2c42b9e4932f397af32  file_compressor/assets/app_icon.jpg' | sha256sum -c -
+          echo '1d8b2557f1768a6b1691f9a5d92984eea079d57cc41c980b41a8992b1d0e2b47  file_compressor/assets/app_icon.jpg' | sha256sum -c -
           echo 'ac880a7e7cd3369624f8e3d6e26fb0a38c6cba3f4055b0ce22f3155fb79a03ba  file_compressor/pubspec.yaml' | sha256sum -c -
 
           python3 - <<'PY'
