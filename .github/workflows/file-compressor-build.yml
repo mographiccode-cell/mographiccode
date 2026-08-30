@@ -50,7 +50,7 @@ jobs:
           main_b64 = clean_b64(['build_assets/v11_main.part1', 'build_assets/v11_main.part2'])
           Path('file_compressor/lib/main.dart').write_bytes(gzip.decompress(base64.b64decode(main_b64)))
 
-          icon_b64 = clean_b64(['build_assets/v11_icon_192.b64'])
+          icon_b64 = clean_b64(['build_assets/v11_icon_128.b64'])
           Path('file_compressor/assets/app_icon.jpg').write_bytes(base64.b64decode(icon_b64))
 
           pub_b64 = clean_b64(['build_assets/v11_pubspec.b64'])
