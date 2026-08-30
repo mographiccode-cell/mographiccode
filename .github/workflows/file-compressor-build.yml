@@ -105,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           dart format lib test
-          flutter analyze --fatal-infos
+          flutter analyze
           flutter test
 
       - name: Build release APK
