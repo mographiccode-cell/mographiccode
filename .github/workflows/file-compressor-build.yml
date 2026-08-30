@@ -37,11 +37,25 @@ jobs:
           set -euo pipefail
           rm -rf file_compressor
           flutter create --platforms=android,ios --org com.mographiccode --project-name file_compressor file_compressor
-
           mkdir -p file_compressor/lib file_compressor/assets file_compressor/test
-          cat build_assets/v11_main.part1 build_assets/v11_main.part2 | base64 -d | gzip -d > file_compressor/lib/main.dart
-          cat build_assets/v11_icon.part1 build_assets/v11_icon.part2 | base64 -d > file_compressor/assets/app_icon.jpg
-          base64 -d build_assets/v11_pubspec.b64 | gzip -d > file_compressor/pubspec.yaml
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip, re
+
+          def clean_b64(paths):
+              raw = ''.join(Path(p).read_text() for p in paths)
+              return re.sub(r'[^A-Za-z0-9+/=]', '', raw)
+
+          main_b64 = clean_b64(['build_assets/v11_main.part1', 'build_assets/v11_main.part2'])
+          Path('file_compressor/lib/main.dart').write_bytes(gzip.decompress(base64.b64decode(main_b64)))
+
+          icon_b64 = clean_b64(['build_assets/v11_icon.part1', 'build_assets/v11_icon.part2'])
+          Path('file_compressor/assets/app_icon.jpg').write_bytes(base64.b64decode(icon_b64))
+
+          pub_b64 = clean_b64(['build_assets/v11_pubspec.b64'])
+          Path('file_compressor/pubspec.yaml').write_bytes(gzip.decompress(base64.b64decode(pub_b64)))
+          PY
 
           cat > file_compressor/analysis_options.yaml <<'EOF'
           include: package:flutter_lints/flutter.yaml
