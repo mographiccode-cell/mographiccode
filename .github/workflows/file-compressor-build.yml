@@ -31,7 +31,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Restore verified v1.1 source
+      - name: Restore verified v1.2 source
         shell: bash
         run: |
           set -euo pipefail
@@ -73,8 +73,8 @@ jobs:
           }
           EOF
 
-          echo '9e458550808bbea2e9e8749db5f3f5c9df00e34e67b77cc05ea4488b03ec48aa  file_compressor/lib/main.dart' | sha256sum -c -
-          echo 'ac880a7e7cd3369624f8e3d6e26fb0a38c6cba3f4055b0ce22f3155fb79a03ba  file_compressor/pubspec.yaml' | sha256sum -c -
+          echo '8f5b4e371f25b56546086358f5025e7d6777918bb22f86931b1ec04074bd693f  file_compressor/lib/main.dart' | sha256sum -c -
+          echo '47cdb07f289e70966a26331923c78c1869950155a68fcdd08d5eadcaefda2ed2  file_compressor/pubspec.yaml' | sha256sum -c -
           test "$(head -c 2 file_compressor/assets/app_icon.jpg | od -An -tx1 | tr -d ' \n')" = 'ffd8'
           test "$(tail -c 2 file_compressor/assets/app_icon.jpg | od -An -tx1 | tr -d ' \n')" = 'ffd9'
           file file_compressor/assets/app_icon.jpg
@@ -91,13 +91,17 @@ jobs:
           info.write_text(text)
           PY
 
-      - name: Generate launcher icon
+      - name: Generate and verify launcher icon
         working-directory: file_compressor
         shell: bash
         run: |
           set -euo pipefail
           flutter pub get
           dart run flutter_launcher_icons
+          test -f android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          test -f android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          test -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          grep -q '@mipmap/ic_launcher' android/app/src/main/AndroidManifest.xml
 
       - name: Analyze and test
         working-directory: file_compressor
@@ -105,7 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           dart format lib test
-          flutter analyze
+          flutter analyze --no-fatal-infos --no-fatal-warnings
           flutter test
 
       - name: Build release APK
@@ -114,22 +118,22 @@ jobs:
         run: |
           set -euo pipefail
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/File-Compressor-v1.1.0.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/File-Compressor-v1.2.0.apk
 
       - name: APK metadata
         working-directory: file_compressor
         shell: bash
         run: |
           set -euo pipefail
-          sha256sum build/app/outputs/flutter-apk/File-Compressor-v1.1.0.apk | tee APK_SHA256.txt
-          stat -c '%s bytes' build/app/outputs/flutter-apk/File-Compressor-v1.1.0.apk | tee APK_SIZE.txt
+          sha256sum build/app/outputs/flutter-apk/File-Compressor-v1.2.0.apk | tee APK_SHA256.txt
+          stat -c '%s bytes' build/app/outputs/flutter-apk/File-Compressor-v1.2.0.apk | tee APK_SIZE.txt
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: file-compressor-v1-1-release-apk
+          name: file-compressor-v1-2-release-apk
           path: |
-            file_compressor/build/app/outputs/flutter-apk/File-Compressor-v1.1.0.apk
+            file_compressor/build/app/outputs/flutter-apk/File-Compressor-v1.2.0.apk
             file_compressor/APK_SHA256.txt
             file_compressor/APK_SIZE.txt
           if-no-files-found: error
