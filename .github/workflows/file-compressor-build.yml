@@ -41,13 +41,26 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
-          import base64, gzip, re
+          import base64, gzip, re, hashlib
+
+          main_parts = [
+              ('build_assets/v12_main.part1', '449c1fc50684a5e2c67e5c5e33ff61e9bdf015d214902aa11db0e62d9c7244a9'),
+              ('build_assets/v12_main.part2', 'ae3385c924fab2f2d3a34f9f01873b6d49286ad901a5e7852ce7d0683b18ade4'),
+              ('build_assets/v12_main.part3', '9a9bab55fc47c4e89d0f72f4aed2490331b19319e0df774f930f415a7a06f9b2'),
+              ('build_assets/v12_main.part4', '62bb22bb131cd234b33707d3afb3aca20651c4de99102c5175097e02e998af82'),
+              ('build_assets/v12_main.part5', '34c6058ade92fc01c7d221c3fa831c1b85ddde19ff7ffe9704ae4aac50676957'),
+          ]
+          for path, expected in main_parts:
+              data = Path(path).read_bytes()
+              actual = hashlib.sha256(data).hexdigest()
+              if actual != expected:
+                  raise RuntimeError(f'Chunk checksum mismatch: {path}: {actual}')
 
           def clean_b64(paths):
               raw = ''.join(Path(p).read_text() for p in paths)
               return re.sub(r'[^A-Za-z0-9+/=]', '', raw)
 
-          main_b64 = clean_b64(['build_assets/v11_main.part1', 'build_assets/v11_main.part2'])
+          main_b64 = clean_b64([p for p, _ in main_parts])
           Path('file_compressor/lib/main.dart').write_bytes(gzip.decompress(base64.b64decode(main_b64)))
 
           icon_b64 = clean_b64(['build_assets/v11_icon_128.b64'])
