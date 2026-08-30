@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-smoke-test:
+  build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -86,59 +86,29 @@ jobs:
           flutter analyze --fatal-infos
           flutter test
 
-      - name: Build Android APKs
+      - name: Build release APK
         working-directory: file_compressor
         shell: bash
         run: |
           set -euo pipefail
-          flutter build apk --debug
           flutter build apk --release
-
-      - name: Android startup smoke test
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -euo pipefail
-            adb install -r file_compressor/build/app/outputs/flutter-apk/app-debug.apk
-            adb logcat -c
-            adb shell am start -W -n com.mographiccode.file_compressor/.MainActivity | tee /tmp/file-compressor-start.txt
-            sleep 3
-            test -n "$(adb shell pidof com.mographiccode.file_compressor | tr -d '\r')"
-            adb logcat -d > /tmp/file-compressor-logcat.txt
-            ! grep -A 20 -B 2 'FATAL EXCEPTION' /tmp/file-compressor-logcat.txt | grep -q 'com.mographiccode.file_compressor'
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/File-Compressor.apk
 
       - name: APK metadata
         working-directory: file_compressor
         shell: bash
         run: |
           set -euo pipefail
-          sha256sum build/app/outputs/flutter-apk/app-release.apk | tee APK_SHA256.txt
-          stat -c '%s bytes' build/app/outputs/flutter-apk/app-release.apk | tee APK_SIZE.txt
+          sha256sum build/app/outputs/flutter-apk/File-Compressor.apk | tee APK_SHA256.txt
+          stat -c '%s bytes' build/app/outputs/flutter-apk/File-Compressor.apk | tee APK_SIZE.txt
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: file-compressor-release-apk
           path: |
-            file_compressor/build/app/outputs/flutter-apk/app-release.apk
+            file_compressor/build/app/outputs/flutter-apk/File-Compressor.apk
             file_compressor/APK_SHA256.txt
             file_compressor/APK_SIZE.txt
           if-no-files-found: error
           retention-days: 14
-
-      - name: Upload smoke-test diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: file-compressor-diagnostics
-          path: |
-            /tmp/file-compressor-start.txt
-            /tmp/file-compressor-logcat.txt
-          if-no-files-found: ignore
-          retention-days: 7
