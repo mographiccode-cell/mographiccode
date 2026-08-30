@@ -44,11 +44,11 @@ jobs:
           import base64, gzip, re, hashlib
 
           main_parts = [
-              ('build_assets/v12_main.part1', '449c1fc50684a5e2c67e5c5e33ff61e9bdf015d214902aa11db0e62d9c7244a9'),
-              ('build_assets/v12_main.part2', 'ae3385c924fab2f2d3a34f9f01873b6d49286ad901a5e7852ce7d0683b18ade4'),
-              ('build_assets/v12_main.part3', '9a9bab55fc47c4e89d0f72f4aed2490331b19319e0df774f930f415a7a06f9b2'),
-              ('build_assets/v12_main.part4', '62bb22bb131cd234b33707d3afb3aca20651c4de99102c5175097e02e998af82'),
-              ('build_assets/v12_main.part5', '34c6058ade92fc01c7d221c3fa831c1b85ddde19ff7ffe9704ae4aac50676957'),
+              ('build_assets/v12_main.part1', 'cc85c947573784cdcd597cadad14af38ec8e0b2f377167ac709fe75518a5f8d7'),
+              ('build_assets/v12_main.part2', 'ffff6335e3860da81d53435ec04a3c4e8127c2d439ce551a07d878ee96bcba9d'),
+              ('build_assets/v12_main.part3', '70428159bf472fe0372fb38ef5ce57b054d03189ff528b2ba35b0017c04f35b0'),
+              ('build_assets/v12_main.part4', 'e3690185184fbac2fb42473a809fc573665b187feb16bd50bded68b2f66a201b'),
+              ('build_assets/v12_main.part5', '576141a40c3540ccfcc91ed2f863a1b145f9be21b708ce0263e6145f6706b4dd'),
           ]
           for path, expected in main_parts:
               data = Path(path).read_bytes()
@@ -86,7 +86,7 @@ jobs:
           }
           EOF
 
-          echo '8f5b4e371f25b56546086358f5025e7d6777918bb22f86931b1ec04074bd693f  file_compressor/lib/main.dart' | sha256sum -c -
+          echo '651fe9d61a98323ddd04de60d73eecbf9b3669c251ace8a625ad34a6481bd12e  file_compressor/lib/main.dart' | sha256sum -c -
           echo '47cdb07f289e70966a26331923c78c1869950155a68fcdd08d5eadcaefda2ed2  file_compressor/pubspec.yaml' | sha256sum -c -
           test "$(head -c 2 file_compressor/assets/app_icon.jpg | od -An -tx1 | tr -d ' \n')" = 'ffd8'
           test "$(tail -c 2 file_compressor/assets/app_icon.jpg | od -An -tx1 | tr -d ' \n')" = 'ffd9'
