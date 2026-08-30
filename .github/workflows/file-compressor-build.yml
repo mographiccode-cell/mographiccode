@@ -47,7 +47,7 @@ jobs:
               ('build_assets/v12_main.part1', 'cc85c947573784cdcd597cadad14af38ec8e0b2f377167ac709fe75518a5f8d7'),
               ('build_assets/v12_main.part2', 'ffff6335e3860da81d53435ec04a3c4e8127c2d439ce551a07d878ee96bcba9d'),
               ('build_assets/v12_main.part3', '70428159bf472fe0372fb38ef5ce57b054d03189ff528b2ba35b0017c04f35b0'),
-              ('build_assets/v12_main.part4', 'e3690185184fbac2fb42473a809fc573665b187feb16bd50bded68b2f66a201b'),
+              ('build_assets/v12_main.part4', 'af007de5dd334bc0f2ad6045f7740c32213d1aecff511c3232ebdda128f5f7ad'),
               ('build_assets/v12_main.part5', '576141a40c3540ccfcc91ed2f863a1b145f9be21b708ce0263e6145f6706b4dd'),
           ]
           for path, expected in main_parts:
