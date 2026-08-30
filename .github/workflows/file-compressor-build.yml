@@ -31,27 +31,37 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Rebuild updated source
+      - name: Restore verified v1.1 source
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf file_compressor /tmp/file-compressor-v11 source_v11.b64 source_v11.zip
-          cat build_assets/file_compressor_src_v11.part1 \
-              build_assets/file_compressor_src_v11.part2 \
-              build_assets/file_compressor_src_v11.part3 \
-              build_assets/file_compressor_src_v11.part4 > source_v11.b64
-          base64 -d source_v11.b64 > source_v11.zip
-          unzip -q source_v11.zip -d /tmp/file-compressor-v11
-          SRC=/tmp/file-compressor-v11/file_compressor_flutter
-
+          rm -rf file_compressor
           flutter create --platforms=android,ios --org com.mographiccode --project-name file_compressor file_compressor
-          rm -rf file_compressor/lib file_compressor/test file_compressor/assets
-          cp -a "$SRC/lib" file_compressor/lib
-          cp -a "$SRC/test" file_compressor/test
-          cp -a "$SRC/assets" file_compressor/assets
-          cp "$SRC/pubspec.yaml" file_compressor/pubspec.yaml
-          cp "$SRC/analysis_options.yaml" file_compressor/analysis_options.yaml
-          cp "$SRC/README.md" file_compressor/README.md
+
+          mkdir -p file_compressor/lib file_compressor/assets file_compressor/test
+          cat build_assets/v11_main.part1 build_assets/v11_main.part2 | base64 -d | gzip -d > file_compressor/lib/main.dart
+          cat build_assets/v11_icon.part1 build_assets/v11_icon.part2 | base64 -d > file_compressor/assets/app_icon.jpg
+          base64 -d build_assets/v11_pubspec.b64 | gzip -d > file_compressor/pubspec.yaml
+
+          cat > file_compressor/analysis_options.yaml <<'EOF'
+          include: package:flutter_lints/flutter.yaml
+          EOF
+
+          cat > file_compressor/test/widget_test.dart <<'EOF'
+          import 'package:file_compressor/main.dart';
+          import 'package:flutter_test/flutter_test.dart';
+
+          void main() {
+            test('formatBytes formats values', () {
+              expect(formatBytes(1024), '1.0 KB');
+              expect(formatBytes(1048576), '1.0 MB');
+            });
+          }
+          EOF
+
+          echo '9e458550808bbea2e9e8749db5f3f5c9df00e34e67b77cc05ea4488b03ec48aa  file_compressor/lib/main.dart' | sha256sum -c -
+          echo 'e0ca39b2cb166b33850dba9ecb6205c4da3334a32514e2c42b9e4932f397af32  file_compressor/assets/app_icon.jpg' | sha256sum -c -
+          echo 'ac880a7e7cd3369624f8e3d6e26fb0a38c6cba3f4055b0ce22f3155fb79a03ba  file_compressor/pubspec.yaml' | sha256sum -c -
 
           python3 - <<'PY'
           from pathlib import Path
