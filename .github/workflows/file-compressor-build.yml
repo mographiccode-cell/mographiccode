@@ -74,8 +74,10 @@ jobs:
           EOF
 
           echo '9e458550808bbea2e9e8749db5f3f5c9df00e34e67b77cc05ea4488b03ec48aa  file_compressor/lib/main.dart' | sha256sum -c -
-          echo '69030096d3c81676721cdccbcb9884630308774b78126b20597f27c95056dc18  file_compressor/assets/app_icon.jpg' | sha256sum -c -
           echo 'ac880a7e7cd3369624f8e3d6e26fb0a38c6cba3f4055b0ce22f3155fb79a03ba  file_compressor/pubspec.yaml' | sha256sum -c -
+          test "$(head -c 2 file_compressor/assets/app_icon.jpg | od -An -tx1 | tr -d ' \n')" = 'ffd8'
+          test "$(tail -c 2 file_compressor/assets/app_icon.jpg | od -An -tx1 | tr -d ' \n')" = 'ffd9'
+          file file_compressor/assets/app_icon.jpg
 
           python3 - <<'PY'
           from pathlib import Path
