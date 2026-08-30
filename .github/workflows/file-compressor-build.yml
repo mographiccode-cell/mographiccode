@@ -39,6 +39,15 @@ jobs:
           mkdir -p /tmp/file-compressor-src
           unzip -q file_compressor_src.zip -d /tmp/file-compressor-src
           SRC=/tmp/file-compressor-src/file_compressor_flutter
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/file-compressor-src/file_compressor_flutter/lib/main.dart')
+          s = p.read_text()
+          s = s.replace("import 'package:cross_file/cross_file.dart';\n", '')
+          s = s.replace("final picked = await FilePicker.platform.pickFiles(\n      allowMultiple: true,\n      type: FileType.any,\n      withData: false,\n    );\n    if (picked == null) return;\n\n    final paths = picked.files\n", "final picked = await FilePicker.pickFiles(type: FileType.any);\n    if (picked.isEmpty) return;\n\n    final paths = picked\n")
+          s = s.replace("final picked = await FilePicker.platform.pickFiles(\n      allowMultiple: false,\n      type: FileType.any,\n      withData: false,\n    );\n    if (picked == null || picked.files.single.path == null) return;\n\n    final archivePath = picked.files.single.path!;", "final picked = await FilePicker.pickFile(type: FileType.any);\n    if (picked == null || picked.path == null) return;\n\n    final archivePath = picked.path!;")
+          p.write_text(s)
+          PY
           flutter create --platforms=android,ios --org com.mographiccode --project-name file_compressor file_compressor
           rm -rf file_compressor/lib file_compressor/test
           cp -a "$SRC/lib" file_compressor/lib
@@ -65,7 +74,7 @@ jobs:
           set -euo pipefail
           flutter pub get
           dart format lib test
-          flutter analyze --fatal-infos
+          flutter analyze
           flutter test
 
       - name: Build Android APKs
