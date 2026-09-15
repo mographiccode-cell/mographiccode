@@ -27,7 +27,7 @@ jobs:
           test -f project_organizer_flutter/pubspec.yaml
           test -f project_organizer_flutter/lib/main.dart
 
-      - name: Apply v1.1 voice-input patch
+      - name: Apply v1.1 voice-input patch and quality fixes
         shell: bash
         run: |
           cat projectdesk_patch/voice.patch.part* > projectdesk-voice-patch.b64
@@ -36,11 +36,23 @@ jobs:
           tar -xJf projectdesk-voice-patch.tar.xz -C project_organizer_flutter
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('project_organizer_flutter/lib/widgets/voice_text_field.dart')
+          root = Path('project_organizer_flutter')
+          p = root / 'lib/widgets/voice_text_field.dart'
           s = p.read_text()
           s = s.replace('selection.start.clamp(0, text.length) : text.length', 'selection.start.clamp(0, text.length).toInt() : text.length')
           s = s.replace('selection.end.clamp(start, text.length) : start', 'selection.end.clamp(start, text.length).toInt() : start')
           p.write_text(s)
+          for rel in [
+              'lib/screens/ideas_screen.dart',
+              'lib/screens/project_detail_screen.dart',
+              'lib/screens/projects_screen.dart',
+              'lib/screens/tasks_screen.dart',
+          ]:
+              p = root / rel
+              s = p.read_text().replace('separatorBuilder: (_, __)', 'separatorBuilder: (_, _)')
+              p.write_text(s)
+          p = root / 'lib/services/backup_service.dart'
+          p.write_text(p.read_text().replace("import 'package:cross_file/cross_file.dart';\n", ''))
           PY
           grep -q "version: 1.1.0+2" project_organizer_flutter/pubspec.yaml
           grep -q "VoiceInputService" project_organizer_flutter/lib/services/voice_input_service.dart
