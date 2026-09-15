@@ -81,6 +81,7 @@ jobs:
           if [ -d /tmp/projectdesk-icons/android/app/src/main/res ]; then
             cp -rf /tmp/projectdesk-icons/android/app/src/main/res/mipmap-* android/app/src/main/res/ || true
           fi
+          rm -f test/widget_test.dart
 
           grep -q "android.permission.RECORD_AUDIO" android/app/src/main/AndroidManifest.xml
           grep -q "namespace = \"com.mographikod.projectdesk\"" android/app/build.gradle.kts
