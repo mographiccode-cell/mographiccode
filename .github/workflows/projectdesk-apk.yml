@@ -37,11 +37,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root = Path('project_organizer_flutter')
+
           p = root / 'lib/widgets/voice_text_field.dart'
           s = p.read_text()
           s = s.replace('selection.start.clamp(0, text.length) : text.length', 'selection.start.clamp(0, text.length).toInt() : text.length')
           s = s.replace('selection.end.clamp(start, text.length) : start', 'selection.end.clamp(start, text.length).toInt() : start')
           p.write_text(s)
+
           for rel in [
               'lib/screens/ideas_screen.dart',
               'lib/screens/project_detail_screen.dart',
@@ -51,13 +53,22 @@ jobs:
               p = root / rel
               s = p.read_text().replace('separatorBuilder: (_, __)', 'separatorBuilder: (_, _)')
               p.write_text(s)
+
           p = root / 'lib/services/backup_service.dart'
           p.write_text(p.read_text().replace("import 'package:cross_file/cross_file.dart';\n", ''))
+
+          p = root / 'lib/services/file_service.dart'
+          s = p.read_text()
+          if "import 'dart:convert';\n" not in s:
+              s = s.replace("import 'dart:io';\n", "import 'dart:convert';\nimport 'dart:io';\n")
+          s = s.replace('XmlDocument.parse(String.fromCharCodes(doc.content))', 'XmlDocument.parse(utf8.decode(doc.content as List<int>))')
+          p.write_text(s)
           PY
           grep -q "version: 1.1.0+2" project_organizer_flutter/pubspec.yaml
           grep -q "VoiceInputService" project_organizer_flutter/lib/services/voice_input_service.dart
           grep -q "EXTRA_ENABLE_LANGUAGE_SWITCH" project_organizer_flutter/android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt
           grep -q "android.permission.RECORD_AUDIO" project_organizer_flutter/android/app/src/main/AndroidManifest.xml
+          grep -q "utf8.decode" project_organizer_flutter/lib/services/file_service.dart
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
