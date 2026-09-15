@@ -1,0 +1,64 @@
+name: Export ProjectDesk Current Source
+
+on:
+  push:
+    branches:
+      - projectdesk-apk-build
+    paths:
+      - '.github/workflows/export-projectdesk-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore base source
+        shell: bash
+        run: |
+          cat projectdesk_build/source.part* > projectdesk-source.b64
+          base64 --decode projectdesk-source.b64 > projectdesk-source.tar.xz
+          tar -xJf projectdesk-source.tar.xz
+
+      - name: Apply current v1.1 patch and fixes
+        shell: bash
+        run: |
+          cat projectdesk_patch/voice.patch.part* > projectdesk-voice-patch.b64
+          base64 --decode projectdesk-voice-patch.b64 > projectdesk-voice-patch.tar.xz
+          tar -xJf projectdesk-voice-patch.tar.xz -C project_organizer_flutter
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('project_organizer_flutter')
+          p = root / 'lib/widgets/voice_text_field.dart'
+          s = p.read_text()
+          s = s.replace('selection.start.clamp(0, text.length) : text.length', 'selection.start.clamp(0, text.length).toInt() : text.length')
+          s = s.replace('selection.end.clamp(start, text.length) : start', 'selection.end.clamp(start, text.length).toInt() : start')
+          p.write_text(s)
+          for rel in ['lib/screens/ideas_screen.dart','lib/screens/project_detail_screen.dart','lib/screens/projects_screen.dart','lib/screens/tasks_screen.dart']:
+              p = root / rel
+              p.write_text(p.read_text().replace('separatorBuilder: (_, __)', 'separatorBuilder: (_, _)'))
+          p = root / 'lib/services/backup_service.dart'
+          p.write_text(p.read_text().replace("import 'package:cross_file/cross_file.dart';\n", ''))
+          p = root / 'lib/services/file_service.dart'
+          s = p.read_text()
+          if "import 'dart:convert';\n" not in s:
+              s = s.replace("import 'dart:io';\n", "import 'dart:convert';\nimport 'dart:io';\n")
+          s = s.replace('XmlDocument.parse(String.fromCharCodes(doc.content))', 'XmlDocument.parse(utf8.decode(doc.content as List<int>))')
+          p.write_text(s)
+          PY
+
+      - name: Archive reconstructed source
+        shell: bash
+        run: tar -cJf ProjectDesk-v1.1-current-source.tar.xz project_organizer_flutter
+
+      - name: Upload reconstructed source
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectDesk-v1.1-current-source
+          path: ProjectDesk-v1.1-current-source.tar.xz
+          if-no-files-found: error
+          retention-days: 2
