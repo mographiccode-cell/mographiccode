@@ -1,13 +1,118 @@
 name: ProjectDesk Android APK
 
 on:
+  push:
+    branches:
+      - projectdesk-apk-build
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  parked:
+  build-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
-      - run: echo "Workflow temporarily parked while ProjectDesk v1.1 voice patch is uploaded."
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+
+      - name: Restore ProjectDesk source archive
+        shell: bash
+        run: |
+          cat projectdesk_build/source.part* > projectdesk-source.b64
+          base64 --decode projectdesk-source.b64 > projectdesk-source.tar.xz
+          echo "87f823dc30bf6b91969c8d1d3d516e2496c80e9b192c17f5d6c70707ac9aa9ae  projectdesk-source.tar.xz" | sha256sum -c -
+          tar -xJf projectdesk-source.tar.xz
+          test -f project_organizer_flutter/pubspec.yaml
+          test -f project_organizer_flutter/lib/main.dart
+
+      - name: Apply v1.1 voice-input patch
+        shell: bash
+        run: |
+          cat projectdesk_patch/voice.patch.part* > projectdesk-voice-patch.b64
+          base64 --decode projectdesk-voice-patch.b64 > projectdesk-voice-patch.tar.xz
+          echo "55973338a07cdefe0d86710a4ae4640d83cfa0b0951063cd45a4abcda1d7b5cd  projectdesk-voice-patch.tar.xz" | sha256sum -c -
+          tar -xJf projectdesk-voice-patch.tar.xz -C project_organizer_flutter
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('project_organizer_flutter/lib/widgets/voice_text_field.dart')
+          s = p.read_text()
+          s = s.replace('selection.start.clamp(0, text.length) : text.length', 'selection.start.clamp(0, text.length).toInt() : text.length')
+          s = s.replace('selection.end.clamp(start, text.length) : start', 'selection.end.clamp(start, text.length).toInt() : start')
+          p.write_text(s)
+          PY
+          grep -q "version: 1.1.0+2" project_organizer_flutter/pubspec.yaml
+          grep -q "VoiceInputService" project_organizer_flutter/lib/services/voice_input_service.dart
+          grep -q "EXTRA_ENABLE_LANGUAGE_SWITCH" project_organizer_flutter/android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt
+          grep -q "android.permission.RECORD_AUDIO" project_organizer_flutter/android/app/src/main/AndroidManifest.xml
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter 3.47.2
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Regenerate Android host files and restore native voice integration
+        shell: bash
+        working-directory: project_organizer_flutter
+        run: |
+          mkdir -p /tmp/projectdesk-native /tmp/projectdesk-icons
+          cp android/app/src/main/AndroidManifest.xml /tmp/projectdesk-native/AndroidManifest.xml
+          cp android/app/build.gradle.kts /tmp/projectdesk-native/build.gradle.kts
+          cp android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt /tmp/projectdesk-native/MainActivity.kt
+          find android/app/src/main/res -path '*/mipmap-*/ic_launcher.png' -exec cp --parents {} /tmp/projectdesk-icons/ \; 2>/dev/null || true
+
+          rm -rf android
+          flutter create . --platforms=android --org com.mographikod --project-name project_organizer
+
+          cp /tmp/projectdesk-native/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          cp /tmp/projectdesk-native/build.gradle.kts android/app/build.gradle.kts
+          rm -rf android/app/src/main/kotlin
+          mkdir -p android/app/src/main/kotlin/com/mographikod/projectdesk
+          cp /tmp/projectdesk-native/MainActivity.kt android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt
+          if [ -d /tmp/projectdesk-icons/android/app/src/main/res ]; then
+            cp -rf /tmp/projectdesk-icons/android/app/src/main/res/mipmap-* android/app/src/main/res/ || true
+          fi
+
+          grep -q "android.permission.RECORD_AUDIO" android/app/src/main/AndroidManifest.xml
+          grep -q "namespace = \"com.mographikod.projectdesk\"" android/app/build.gradle.kts
+          grep -q "EXTRA_ENABLE_LANGUAGE_SWITCH" android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt
+
+      - name: Resolve dependencies
+        working-directory: project_organizer_flutter
+        run: flutter pub get
+
+      - name: Static analysis
+        working-directory: project_organizer_flutter
+        run: flutter analyze
+
+      - name: Unit tests
+        working-directory: project_organizer_flutter
+        run: flutter test
+
+      - name: Build release APK
+        working-directory: project_organizer_flutter
+        run: flutter build apk --release
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          test -s project_organizer_flutter/build/app/outputs/flutter-apk/app-release.apk
+          sha256sum project_organizer_flutter/build/app/outputs/flutter-apk/app-release.apk
+          ls -lh project_organizer_flutter/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectDesk-v1.1-voice-release-apk
+          path: project_organizer_flutter/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
