@@ -89,7 +89,6 @@ jobs:
         run: |
           mkdir -p /tmp/projectdesk-native /tmp/projectdesk-icons
           cp android/app/src/main/AndroidManifest.xml /tmp/projectdesk-native/AndroidManifest.xml
-          cp android/app/build.gradle.kts /tmp/projectdesk-native/build.gradle.kts
           cp android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt /tmp/projectdesk-native/MainActivity.kt
           find android/app/src/main/res -path '*/mipmap-*/ic_launcher.png' -exec cp --parents {} /tmp/projectdesk-icons/ \; 2>/dev/null || true
 
@@ -97,7 +96,6 @@ jobs:
           flutter create . --platforms=android --org com.mographikod --project-name project_organizer
 
           cp /tmp/projectdesk-native/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          cp /tmp/projectdesk-native/build.gradle.kts android/app/build.gradle.kts
           rm -rf android/app/src/main/kotlin
           mkdir -p android/app/src/main/kotlin/com/mographikod/projectdesk
           cp /tmp/projectdesk-native/MainActivity.kt android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt
@@ -106,8 +104,15 @@ jobs:
           fi
           rm -f test/widget_test.dart
 
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/build.gradle.kts')
+          s = p.read_text().replace('com.mographikod.project_organizer', 'com.mographikod.projectdesk')
+          p.write_text(s)
+          PY
+
           grep -q "android.permission.RECORD_AUDIO" android/app/src/main/AndroidManifest.xml
-          grep -q "namespace = \"com.mographikod.projectdesk\"" android/app/build.gradle.kts
+          grep -q "com.mographikod.projectdesk" android/app/build.gradle.kts
           grep -q "EXTRA_ENABLE_LANGUAGE_SWITCH" android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt
 
       - name: Resolve dependencies
