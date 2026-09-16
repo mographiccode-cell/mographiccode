@@ -20,6 +20,15 @@ gradle_kts = Path('android/app/build.gradle.kts')
 if gradle_kts.exists():
     g = gradle_kts.read_text(encoding='utf-8')
     g = g.replace('minSdk = flutter.minSdkVersion', 'minSdk = 24')
+    if 'isCoreLibraryDesugaringEnabled' not in g:
+        g = g.replace(
+            'compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17',
+            'compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n        sourceCompatibility = JavaVersion.VERSION_17',
+        )
+    if 'multiDexEnabled = true' not in g:
+        g = g.replace('defaultConfig {', 'defaultConfig {\n        multiDexEnabled = true', 1)
+    if 'coreLibraryDesugaring(' not in g:
+        g += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
     gradle_kts.write_text(g, encoding='utf-8')
 
 strings = Path('android/app/src/main/res/values/strings.xml')
