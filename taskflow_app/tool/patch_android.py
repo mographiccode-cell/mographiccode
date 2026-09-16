@@ -1,4 +1,7 @@
 from pathlib import Path
+import base64
+import io
+import zipfile
 
 manifest = Path('android/app/src/main/AndroidManifest.xml')
 text = manifest.read_text(encoding='utf-8')
@@ -38,3 +41,56 @@ strings.write_text('''<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <
 text = manifest.read_text(encoding='utf-8')
 text = text.replace('android:label="taskflow"', 'android:label="@string/app_name"')
 manifest.write_text(text, encoding='utf-8')
+
+# Install the custom launcher icon generated for this app.
+icon_archive = Path('tool/launcher_icons_webp.zip.b64')
+if icon_archive.exists():
+    raw = base64.b64decode(icon_archive.read_text(encoding='ascii'))
+    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+        for member in zf.namelist():
+            out = Path('android/app/src/main/res') / member
+            out.parent.mkdir(parents=True, exist_ok=True)
+            old_png = out.with_suffix('.png')
+            if old_png.exists():
+                old_png.unlink()
+            out.write_bytes(zf.read(member))
+
+# Add the developer signature to the bottom of the home screen.
+dart_main = Path('lib/main.dart')
+if dart_main.exists():
+    d = dart_main.read_text(encoding='utf-8')
+    signature = 'تصميم وبرمجة م.محمود دغَبس — 74813824'
+    if signature not in d:
+        needle = """              _UpcomingList(
+                tasks: widget.store.tasks
+                    .where((e) => !e.completed)
+                    .toList()
+                  ..sort((a, b) {
+                    if (a.dueAt == null && b.dueAt == null) {
+                      return b.createdAt.compareTo(a.createdAt);
+                    }
+                    if (a.dueAt == null) return 1;
+                    if (b.dueAt == null) return -1;
+                    return a.dueAt!.compareTo(b.dueAt!);
+                  }),
+                store: widget.store,
+                onOpen: _openEditor,
+              ),
+"""
+        footer = needle + """              const SizedBox(height: 28),
+              const Center(
+                child: Text(
+                  'تصميم وبرمجة م.محمود دغَبس — 74813824',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF8E8E93),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+"""
+        if needle in d:
+            d = d.replace(needle, footer, 1)
+            dart_main.write_text(d, encoding='utf-8')
