@@ -1,0 +1,72 @@
+name: Build TaskFlow APK
+
+on:
+  push:
+    branches:
+      - taskflow-flutter-app-20260916
+    paths:
+      - 'taskflow_app/**'
+      - '.github/workflows/taskflow-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: taskflow_app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Restore source and generate Android project
+        run: |
+          mkdir -p lib
+          base64 -d tool/main.dart.gz.b64 | gzip -d > /tmp/taskflow_main.dart
+          cp pubspec.yaml /tmp/taskflow_pubspec.yaml
+          cp analysis_options.yaml /tmp/taskflow_analysis_options.yaml
+          flutter create --platforms=android --org com.mographiccode --project-name taskflow .
+          cp /tmp/taskflow_pubspec.yaml pubspec.yaml
+          cp /tmp/taskflow_main.dart lib/main.dart
+          cp /tmp/taskflow_analysis_options.yaml analysis_options.yaml
+          python3 tool/patch_android.py
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/TaskFlow-1.0.0.apk
+          cd ..
+          zip -r taskflow-source.zip taskflow_app -x 'taskflow_app/build/*' 'taskflow_app/.dart_tool/*' 'taskflow_app/dist/*'
+          mv taskflow-source.zip taskflow_app/dist/TaskFlow-Source.zip
+
+      - name: Upload APK and source
+        uses: actions/upload-artifact@v4
+        with:
+          name: TaskFlow-Android
+          path: |
+            taskflow_app/dist/TaskFlow-1.0.0.apk
+            taskflow_app/dist/TaskFlow-Source.zip
+          if-no-files-found: error
+          retention-days: 30
