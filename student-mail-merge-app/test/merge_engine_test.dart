@@ -239,12 +239,10 @@ void main() {
     final excel = await engine.readExcel(_makeExcelLikeUserFile());
     final templateBytes = await _makeLabeledTemplate();
 
-    final merged = engine.mergeDocx(
+    final pdfBytes = await engine.buildDesignPdfFromTemplate(
       templateBytes: templateBytes,
       records: excel.records,
     );
-
-    final pdfBytes = await engine.buildDesignPdfFromDocx(merged);
 
     expect(pdfBytes.length, greaterThan(1000));
     expect(ascii.decode(pdfBytes.sublist(0, 4)), '%PDF');
