@@ -509,12 +509,66 @@ class MergeEngine {
     return Uint8List.fromList(zipped);
   }
 
-  Future<Uint8List> buildDesignPdfFromDocx(Uint8List mergedDocx) async {
+  Future<Uint8List> buildDesignPdfFromTemplate({
+    required Uint8List templateBytes,
+    required List<MergeRecord> records,
+  }) async {
+    if (records.isEmpty) {
+      throw Exception('لا توجد بيانات طلاب لإنشاء PDF.');
+    }
+
     try {
-      final pageBreakAware = _makePdfPageBreakAware(mergedDocx);
-      final parsed = await DocxReader.loadFromBytes(pageBreakAware);
-      final document = await _withArabicFallbackFonts(parsed);
-      final pdf = await PdfExporter().exportToBytes(document);
+      final templateInfo = inspectWord(templateBytes);
+      final cardsPerPage = templateInfo.cardsPerPage;
+      final combinedElements = <DocxNode>[];
+      DocxBuiltDocument? baseDocument;
+      final pageBreak = docx().pageBreak().build().elements.first;
+
+      for (var offset = 0; offset < records.length; offset += cardsPerPage) {
+        final end = offset + cardsPerPage < records.length
+            ? offset + cardsPerPage
+            : records.length;
+
+        final pageDocx = mergeDocx(
+          templateBytes: templateBytes,
+          records: records.sublist(offset, end),
+        );
+
+        final pageDocument = await DocxReader.loadFromBytes(pageDocx);
+        baseDocument ??= pageDocument;
+
+        if (combinedElements.isNotEmpty) {
+          combinedElements.add(pageBreak);
+        }
+        combinedElements.addAll(pageDocument.elements);
+      }
+
+      final source = baseDocument!;
+      final pagedDocument = DocxBuiltDocument(
+        elements: combinedElements,
+        section: source.section,
+        stylesXml: source.stylesXml,
+        numberingXml: source.numberingXml,
+        settingsXml: source.settingsXml,
+        fontTableXml: source.fontTableXml,
+        fontTableRelsXml: source.fontTableRelsXml,
+        themeXml: source.themeXml,
+        contentTypesXml: source.contentTypesXml,
+        rootRelsXml: source.rootRelsXml,
+        headerBgXml: source.headerBgXml,
+        headerBgRelsXml: source.headerBgRelsXml,
+        footnotesXml: source.footnotesXml,
+        endnotesXml: source.endnotesXml,
+        numberingRelsXml: source.numberingRelsXml,
+        numberingImages: source.numberingImages,
+        fonts: source.fonts,
+        footnotes: source.footnotes,
+        endnotes: source.endnotes,
+        theme: source.theme,
+      );
+
+      final fontReady = await _withArabicFallbackFonts(pagedDocument);
+      final pdf = await PdfExporter().exportToBytes(fontReady);
 
       if (pdf.isEmpty) {
         throw Exception('تم إنشاء PDF فارغ.');
@@ -850,76 +904,6 @@ class MergeEngine {
     }
 
     textNodes[endNode].innerText = last.substring(endLocal);
-  }
-
-  Uint8List _makePdfPageBreakAware(Uint8List bytes) {
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final documentFile = _findFile(archive, 'word/document.xml');
-    final document = XmlDocument.parse(
-      utf8.decode(documentFile.content as List<int>),
-    );
-
-    final body = document.descendants
-        .whereType<XmlElement>()
-        .firstWhere((element) => element.name.local == 'body');
-
-    var seenTemplateTable = false;
-
-    for (final child in body.childElements.toList()) {
-      if (child.name.local != 'tbl') continue;
-      if (_cardCells(child).isEmpty) continue;
-
-      if (!seenTemplateTable) {
-        seenTemplateTable = true;
-        continue;
-      }
-
-      final firstParagraph = child.descendants
-          .whereType<XmlElement>()
-          .where((element) => element.name.local == 'p')
-          .firstOrNull;
-
-      if (firstParagraph == null) continue;
-
-      var pPr = firstParagraph.childElements
-          .where((element) => element.name.local == 'pPr')
-          .firstOrNull;
-
-      if (pPr == null) {
-        pPr = XmlDocument.parse(
-          '<w:pPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:pPr>',
-        ).rootElement;
-        firstParagraph.children.insert(0, pPr);
-      }
-
-      final hasPageBreak = pPr.childElements
-          .any((element) => element.name.local == 'pageBreakBefore');
-
-      if (!hasPageBreak) {
-        pPr.children.add(
-          XmlDocument.parse(
-            '<w:pageBreakBefore xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-          ).rootElement,
-        );
-      }
-    }
-
-    final data = utf8.encode(document.toXmlString(pretty: false));
-    final output = Archive();
-
-    for (final file in archive) {
-      if (file.name == 'word/document.xml') {
-        output.addFile(ArchiveFile(file.name, data.length, data));
-      } else {
-        final original = file.content as List<int>;
-        output.addFile(
-          ArchiveFile(file.name, original.length, original),
-        );
-      }
-    }
-
-    final zipped = ZipEncoder().encode(output);
-    return Uint8List.fromList(zipped);
   }
 
   XmlElement? _findTemplateTable(XmlElement body) {
