@@ -117,26 +117,15 @@ class MergeEngine {
   static const List<String> _gradeWords = [
     'الاول',
     'الأول',
-    'الاولى',
-    'الأولى',
     'الثاني',
-    'الثانية',
     'الثالث',
-    'الثالثة',
     'الرابع',
-    'الرابعة',
     'الخامس',
-    'الخامسة',
     'السادس',
-    'السادسة',
     'السابع',
-    'السابعة',
     'الثامن',
-    'الثامنة',
     'التاسع',
-    'التاسعة',
     'العاشر',
-    'العاشرة',
     'اول',
     'أول',
     'ثاني',
@@ -926,7 +915,7 @@ class MergeEngine {
 
   static bool _looksNumeric(String text) {
     final normalized =
-        text.replaceAll(RegExp(r'[٠-٩]'), (match) {
+        text.replaceAllMapped(RegExp(r'[٠-٩]'), (match) {
       const eastern = '٠١٢٣٤٥٦٧٨٩';
       return eastern.indexOf(match.group(0)!).toString();
     }).trim();
@@ -936,7 +925,7 @@ class MergeEngine {
 
   static String _normalizeNumber(String text) {
     var normalized =
-        text.replaceAll(RegExp(r'[٠-٩]'), (match) {
+        text.replaceAllMapped(RegExp(r'[٠-٩]'), (match) {
       const eastern = '٠١٢٣٤٥٦٧٨٩';
       return eastern.indexOf(match.group(0)!).toString();
     }).trim();
