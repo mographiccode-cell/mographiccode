@@ -254,7 +254,7 @@ class MergeEngine {
     }
 
     final zipped = ZipEncoder().encode(outputArchive);
-    if (zipped == null || zipped.isEmpty) {
+    if (zipped.isEmpty) {
       throw Exception('تعذر إنشاء ملف Word المدموج.');
     }
 
