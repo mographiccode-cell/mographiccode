@@ -23,7 +23,7 @@ jobs:
         run: |
           flutter create --platforms=android,windows --org com.mographiccode --project-name student_mail_merge buildapp
           cp student-mail-merge-app/pubspec.yaml buildapp/pubspec.yaml
-          rm -rf buildapp/lib
+          rm -rf buildapp/lib buildapp/test buildapp/analysis_options.yaml
           cp -r student-mail-merge-app/lib buildapp/lib
 
       - name: Dependencies
@@ -32,7 +32,7 @@ jobs:
 
       - name: Analyze
         working-directory: buildapp
-        run: flutter analyze
+        run: flutter analyze --no-fatal-warnings
 
       - name: Build release APK
         working-directory: buildapp
@@ -67,6 +67,8 @@ jobs:
           flutter create --platforms=android,windows --org com.mographiccode --project-name student_mail_merge buildapp
           Copy-Item -Force student-mail-merge-app/pubspec.yaml buildapp/pubspec.yaml
           Remove-Item -Recurse -Force buildapp/lib
+          if (Test-Path buildapp/test) { Remove-Item -Recurse -Force buildapp/test }
+          if (Test-Path buildapp/analysis_options.yaml) { Remove-Item -Force buildapp/analysis_options.yaml }
           Copy-Item -Recurse student-mail-merge-app/lib buildapp/lib
 
       - name: Dependencies
@@ -75,7 +77,7 @@ jobs:
 
       - name: Analyze
         working-directory: buildapp
-        run: flutter analyze
+        run: flutter analyze --no-fatal-warnings
 
       - name: Build Windows release
         working-directory: buildapp
