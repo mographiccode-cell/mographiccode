@@ -202,7 +202,10 @@ class _HomePageState extends State<HomePage> {
           });
         }
 
-        pdfBytes = await _engine.buildDesignPdfFromDocx(mergedDocx);
+        pdfBytes = await _engine.buildDesignPdfFromTemplate(
+          templateBytes: _wordBytes!,
+          records: _records,
+        );
         pdfPath = p.join(dir.path, 'student_cards_$stamp.pdf');
         await File(pdfPath).writeAsBytes(pdfBytes, flush: true);
       }
