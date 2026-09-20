@@ -455,7 +455,7 @@ class MergeEngine {
     for (var offset = 0;
         offset < records.length;
         offset += templateCardCount) {
-      final clonedTable = templateTable.copy() as XmlElement;
+      final clonedTable = templateTable.copy();
       final cells = _cardCells(clonedTable);
 
       if (cells.length != templateCardCount) {
@@ -804,7 +804,9 @@ class MergeEngine {
           .firstOrNull;
 
       if (pPr == null) {
-        pPr = XmlElement(XmlName('w:pPr'));
+        pPr = XmlDocument.parse(
+          '<w:pPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:pPr>',
+        ).rootElement;
         firstParagraph.children.insert(0, pPr);
       }
 
@@ -812,7 +814,11 @@ class MergeEngine {
           .any((element) => element.name.local == 'pageBreakBefore');
 
       if (!hasPageBreak) {
-        pPr.children.add(XmlElement(XmlName('w:pageBreakBefore')));
+        pPr.children.add(
+          XmlDocument.parse(
+            '<w:pageBreakBefore xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+          ).rootElement,
+        );
       }
     }
 
