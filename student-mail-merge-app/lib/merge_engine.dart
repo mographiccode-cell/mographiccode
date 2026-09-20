@@ -261,11 +261,66 @@ class MergeEngine {
     return Uint8List.fromList(zipped);
   }
 
-  Future<Uint8List> buildDesignPdfFromDocx(Uint8List mergedDocx) async {
-    try {
-      final document = await DocxReader.loadFromBytes(mergedDocx);
-      final pdf = await PdfExporter().exportToBytes(document);
+  Future<Uint8List> buildDesignPdfFromTemplate({
+    required Uint8List templateBytes,
+    required List<MergeRecord> records,
+  }) async {
+    if (records.isEmpty) {
+      throw Exception('لا توجد بيانات طلاب لإنشاء PDF.');
+    }
 
+    try {
+      final templateInfo = inspectWord(templateBytes);
+      final cardsPerPage = templateInfo.cardsPerPage;
+      final combinedElements = <DocxNode>[];
+      DocxBuiltDocument? baseDocument;
+
+      final pageBreak = docx().pageBreak().build().elements.first;
+
+      for (var offset = 0; offset < records.length; offset += cardsPerPage) {
+        final end = offset + cardsPerPage < records.length
+            ? offset + cardsPerPage
+            : records.length;
+
+        final pageDocx = mergeDocx(
+          templateBytes: templateBytes,
+          records: records.sublist(offset, end),
+        );
+
+        final pageDocument = await DocxReader.loadFromBytes(pageDocx);
+        baseDocument ??= pageDocument;
+
+        if (combinedElements.isNotEmpty) {
+          combinedElements.add(pageBreak);
+        }
+        combinedElements.addAll(pageDocument.elements);
+      }
+
+      final source = baseDocument!;
+      final pagedDocument = DocxBuiltDocument(
+        elements: combinedElements,
+        section: source.section,
+        stylesXml: source.stylesXml,
+        numberingXml: source.numberingXml,
+        settingsXml: source.settingsXml,
+        fontTableXml: source.fontTableXml,
+        fontTableRelsXml: source.fontTableRelsXml,
+        themeXml: source.themeXml,
+        contentTypesXml: source.contentTypesXml,
+        rootRelsXml: source.rootRelsXml,
+        headerBgXml: source.headerBgXml,
+        headerBgRelsXml: source.headerBgRelsXml,
+        footnotesXml: source.footnotesXml,
+        endnotesXml: source.endnotesXml,
+        numberingRelsXml: source.numberingRelsXml,
+        numberingImages: source.numberingImages,
+        fonts: source.fonts,
+        footnotes: source.footnotes,
+        endnotes: source.endnotes,
+        theme: source.theme,
+      );
+
+      final pdf = await PdfExporter().exportToBytes(pagedDocument);
       if (pdf.isEmpty) {
         throw Exception('تم إنشاء PDF فارغ.');
       }
