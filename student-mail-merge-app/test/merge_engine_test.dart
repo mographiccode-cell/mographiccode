@@ -23,7 +23,7 @@ Future<Uint8List> _makeLabeledTemplate() async {
   return Uint8List.fromList(bytes);
 }
 
-Uint8List _makeExcelLikeUserFile() {
+Uint8List _makeExcelLikeUserFile({int fourth = 4, int fifth = 4, int sixth = 4}) {
   final excel = Excel.createExcel();
 
   final s1 = excel['ورقة1'];
@@ -42,7 +42,7 @@ Uint8List _makeExcelLikeUserFile() {
     TextCellValue('ارقام الجلوس'),
   ]);
 
-  for (var i = 1; i <= 4; i++) {
+  for (var i = 1; i <= fourth; i++) {
     s1.appendRow([
       IntCellValue(i),
       TextCellValue('طالبة رابع رقم $i'),
@@ -60,7 +60,7 @@ Uint8List _makeExcelLikeUserFile() {
     TextCellValue(''),
   ]);
 
-  for (var i = 1; i <= 4; i++) {
+  for (var i = 1; i <= fifth; i++) {
     s2.appendRow([
       IntCellValue(i),
       TextCellValue('طالبة خامس رقم $i'),
@@ -75,7 +75,7 @@ Uint8List _makeExcelLikeUserFile() {
     TextCellValue('سادس'),
   ]);
 
-  for (var i = 1; i <= 4; i++) {
+  for (var i = 1; i <= sixth; i++) {
     s3.appendRow([
       IntCellValue(i),
       TextCellValue('طالبة سادس رقم $i'),
@@ -197,6 +197,39 @@ void main() {
     expect(cards[11], contains('طالبة سادس رقم 4'));
 
     for (final card in cards.skip(12)) {
+      expect(card, isNot(contains('نموذج')));
+    }
+  });
+
+  test('292 records create exactly 30 ten-card pages with correct grade boundaries', () async {
+    final engine = MergeEngine();
+    final excel = await engine.readExcel(
+      _makeExcelLikeUserFile(fourth: 90, fifth: 101, sixth: 101),
+    );
+    final templateBytes = await _makeLabeledTemplate();
+
+    expect(excel.records.length, 292);
+    expect(excel.records[89].grade, 'الرابع');
+    expect(excel.records[90].grade, 'الخامس');
+    expect(excel.records[190].grade, 'الخامس');
+    expect(excel.records[191].grade, 'السادس');
+    expect(excel.records[291].grade, 'السادس');
+
+    final merged = engine.mergeDocx(
+      templateBytes: templateBytes,
+      records: excel.records,
+    );
+
+    final cards = _cardCellTexts(merged);
+    expect(cards.length, 300);
+
+    expect(cards[89], contains('طالبة رابع رقم 90'));
+    expect(cards[90], contains('طالبة خامس رقم 1'));
+    expect(cards[190], contains('طالبة خامس رقم 101'));
+    expect(cards[191], contains('طالبة سادس رقم 1'));
+    expect(cards[291], contains('طالبة سادس رقم 101'));
+
+    for (final card in cards.skip(292)) {
       expect(card, isNot(contains('نموذج')));
     }
   });
