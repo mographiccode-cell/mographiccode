@@ -1,0 +1,101 @@
+name: Student Mail Merge - Build APK and Windows
+
+on:
+  push:
+    branches:
+      - 'build/student-mail-merge-20260920'
+
+jobs:
+  android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Flutter scaffold
+        run: |
+          flutter create --platforms=android,windows --org com.mographiccode --project-name student_mail_merge buildapp
+          cp student-mail-merge-app/pubspec.yaml buildapp/pubspec.yaml
+          rm -rf buildapp/lib
+          cp -r student-mail-merge-app/lib buildapp/lib
+
+      - name: Dependencies
+        working-directory: buildapp
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: buildapp
+        run: flutter analyze
+
+      - name: Build release APK
+        working-directory: buildapp
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Student-Mail-Merge-APK
+          path: buildapp/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Create Flutter scaffold
+        shell: pwsh
+        run: |
+          flutter create --platforms=android,windows --org com.mographiccode --project-name student_mail_merge buildapp
+          Copy-Item -Force student-mail-merge-app/pubspec.yaml buildapp/pubspec.yaml
+          Remove-Item -Recurse -Force buildapp/lib
+          Copy-Item -Recurse student-mail-merge-app/lib buildapp/lib
+
+      - name: Dependencies
+        working-directory: buildapp
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: buildapp
+        run: flutter analyze
+
+      - name: Build Windows release
+        working-directory: buildapp
+        run: flutter build windows --release
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path buildapp/build/windows/x64/runner/Release/* -DestinationPath Student-Mail-Merge-Windows-Portable.zip -Force
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Student-Mail-Merge-EXE
+          path: buildapp/build/windows/x64/runner/Release/student_mail_merge.exe
+          if-no-files-found: error
+
+      - name: Upload Windows portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Student-Mail-Merge-Windows-Portable
+          path: Student-Mail-Merge-Windows-Portable.zip
+          if-no-files-found: error
