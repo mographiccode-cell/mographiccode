@@ -512,7 +512,8 @@ class MergeEngine {
   Future<Uint8List> buildDesignPdfFromDocx(Uint8List mergedDocx) async {
     try {
       final pageBreakAware = _makePdfPageBreakAware(mergedDocx);
-      final document = await DocxReader.loadFromBytes(pageBreakAware);
+      final parsed = await DocxReader.loadFromBytes(pageBreakAware);
+      final document = await _withArabicFallbackFonts(parsed);
       final pdf = await PdfExporter().exportToBytes(document);
 
       if (pdf.isEmpty) {
@@ -525,6 +526,94 @@ class MergeEngine {
         'تعذر تحويل Word إلى PDF على هذا الجهاز مع الحفاظ على التصميم: $error',
       );
     }
+  }
+
+  Future<DocxBuiltDocument> _withArabicFallbackFonts(
+    DocxBuiltDocument document,
+  ) async {
+    final fontBytes = await _loadSystemArabicFont();
+    if (fontBytes == null || fontBytes.isEmpty) return document;
+
+    final existingFamilies =
+        document.fonts.map((font) => font.familyName.toLowerCase()).toSet();
+
+    final fonts = [...document.fonts];
+    const families = <String>[
+      'Sakkal Majalla',
+      'SC_AMEEN',
+      'Arial',
+      'Tahoma',
+      'Calibri',
+      'Times New Roman',
+    ];
+
+    for (var i = 0; i < families.length; i++) {
+      final family = families[i];
+      if (existingFamilies.contains(family.toLowerCase())) continue;
+
+      final suffix = (i + 1).toString().padLeft(12, '0');
+      fonts.add(
+        EmbeddedFont(
+          familyName: family,
+          bytes: fontBytes,
+          obfuscationKey: '{12345678-1234-1234-1234-$suffix}',
+          preservedFilename: 'arabic_fallback.ttf',
+        ),
+      );
+    }
+
+    return DocxBuiltDocument(
+      elements: document.elements,
+      section: document.section,
+      stylesXml: document.stylesXml,
+      numberingXml: document.numberingXml,
+      settingsXml: document.settingsXml,
+      fontTableXml: document.fontTableXml,
+      fontTableRelsXml: document.fontTableRelsXml,
+      themeXml: document.themeXml,
+      contentTypesXml: document.contentTypesXml,
+      rootRelsXml: document.rootRelsXml,
+      headerBgXml: document.headerBgXml,
+      headerBgRelsXml: document.headerBgRelsXml,
+      footnotesXml: document.footnotesXml,
+      endnotesXml: document.endnotesXml,
+      numberingRelsXml: document.numberingRelsXml,
+      numberingImages: document.numberingImages,
+      fonts: fonts,
+      footnotes: document.footnotes,
+      endnotes: document.endnotes,
+      theme: document.theme,
+    );
+  }
+
+  Future<Uint8List?> _loadSystemArabicFont() async {
+    final candidates = <String>[
+      if (Platform.isAndroid) ...[
+        '/system/fonts/NotoNaskhArabic-Regular.ttf',
+        '/system/fonts/NotoSansArabic-Regular.ttf',
+        '/system/fonts/NotoSansArabicUI-Regular.ttf',
+        '/system/fonts/NotoSansArabic-VF.ttf',
+      ],
+      if (Platform.isWindows) ...[
+        r'C:\Windows\Fonts\arial.ttf',
+        r'C:\Windows\Fonts\tahoma.ttf',
+      ],
+      if (Platform.isLinux) ...[
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+      ],
+    ];
+
+    for (final path in candidates) {
+      try {
+        final file = File(path);
+        if (!await file.exists()) continue;
+        final bytes = await file.readAsBytes();
+        if (bytes.length > 1024) return bytes;
+      } catch (_) {}
+    }
+
+    return null;
   }
 
   Future<String?> tryWindowsOfficePdf(String docxPath) async {
