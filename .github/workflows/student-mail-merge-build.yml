@@ -7,7 +7,7 @@ on:
 
 jobs:
   android:
-    name: Build Android APK
+    name: Test and Build Android APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,6 +25,7 @@ jobs:
           cp student-mail-merge-app/pubspec.yaml buildapp/pubspec.yaml
           rm -rf buildapp/lib buildapp/test buildapp/analysis_options.yaml
           cp -r student-mail-merge-app/lib buildapp/lib
+          cp -r student-mail-merge-app/test buildapp/test
 
       - name: Dependencies
         working-directory: buildapp
@@ -33,6 +34,10 @@ jobs:
       - name: Analyze
         working-directory: buildapp
         run: flutter analyze --no-fatal-warnings
+
+      - name: Run mail merge tests
+        working-directory: buildapp
+        run: flutter test --reporter expanded
 
       - name: Build release APK
         working-directory: buildapp
@@ -46,7 +51,7 @@ jobs:
           if-no-files-found: error
 
   windows:
-    name: Build Windows EXE
+    name: Test and Build Windows EXE
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -70,6 +75,7 @@ jobs:
           if (Test-Path buildapp/test) { Remove-Item -Recurse -Force buildapp/test }
           if (Test-Path buildapp/analysis_options.yaml) { Remove-Item -Force buildapp/analysis_options.yaml }
           Copy-Item -Recurse student-mail-merge-app/lib buildapp/lib
+          Copy-Item -Recurse student-mail-merge-app/test buildapp/test
 
       - name: Dependencies
         working-directory: buildapp
@@ -78,6 +84,10 @@ jobs:
       - name: Analyze
         working-directory: buildapp
         run: flutter analyze --no-fatal-warnings
+
+      - name: Run mail merge tests
+        working-directory: buildapp
+        run: flutter test --reporter expanded
 
       - name: Build Windows release
         working-directory: buildapp
