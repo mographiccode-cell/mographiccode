@@ -5,6 +5,10 @@ on:
     branches:
       - 'build/student-mail-merge-20260920'
 
+concurrency:
+  group: student-mail-merge-final-build
+  cancel-in-progress: true
+
 jobs:
   android:
     name: Test and Build Android APK
