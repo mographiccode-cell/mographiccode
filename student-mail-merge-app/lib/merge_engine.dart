@@ -9,44 +9,146 @@ import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
 class MergeRecord {
-  final Map<String, String> values;
-  const MergeRecord(this.values);
+  final String name;
+  final String grade;
+  final String committee;
+  final String seat;
+  final Map<String, String> raw;
+
+  const MergeRecord({
+    required this.name,
+    required this.grade,
+    required this.committee,
+    required this.seat,
+    this.raw = const {},
+  });
 
   String valueFor(String key) {
-    final exact = values[key];
-    if (exact != null) return exact;
     final normalized = normalize(key);
-    for (final entry in values.entries) {
+
+    for (final entry in raw.entries) {
       if (normalize(entry.key) == normalized) return entry.value;
     }
+
+    if (_nameAliases.contains(normalized)) return name;
+    if (_gradeAliases.contains(normalized)) return grade;
+    if (_committeeAliases.contains(normalized)) return committee;
+    if (_seatAliases.contains(normalized)) return seat;
+
     return '';
   }
 
   static String normalize(String input) => input
       .trim()
-      .replaceAll(RegExp(r'[\s_\-]+'), '')
+      .replaceAll(RegExp(r'[\s_\-–—/\\:：]+'), '')
       .replaceAll('أ', 'ا')
       .replaceAll('إ', 'ا')
       .replaceAll('آ', 'ا')
       .replaceAll('ة', 'ه')
+      .replaceAll('ى', 'ي')
       .toLowerCase();
+
+  static final Set<String> _nameAliases = {
+    normalize('الاسم'),
+    normalize('اسم الطالب'),
+    normalize('اسم الطالبة'),
+    normalize('اسم الطالب/الطالبة'),
+  };
+
+  static final Set<String> _gradeAliases = {
+    normalize('الصف'),
+    normalize('الصف الدراسي'),
+    normalize('المرحلة'),
+  };
+
+  static final Set<String> _committeeAliases = {
+    normalize('اللجنة'),
+    normalize('رقم اللجنة'),
+    normalize('اللجنه'),
+  };
+
+  static final Set<String> _seatAliases = {
+    normalize('رقم الجلوس'),
+    normalize('ارقام الجلوس'),
+    normalize('أرقام الجلوس'),
+    normalize('رقم الجلوس/الطالب'),
+  };
 }
 
 class ExcelImportResult {
-  final List<String> headers;
   final List<MergeRecord> records;
-  const ExcelImportResult(this.headers, this.records);
+  final int sheetCount;
+  final Set<String> detectedFields;
+
+  const ExcelImportResult({
+    required this.records,
+    required this.sheetCount,
+    required this.detectedFields,
+  });
 }
 
+enum WordTemplateMode { placeholders, labeledCards }
+
 class TemplateInfo {
-  final List<String> placeholders;
   final int cardsPerPage;
-  const TemplateInfo(this.placeholders, this.cardsPerPage);
+  final WordTemplateMode mode;
+  final List<String> placeholders;
+  final Set<String> labeledFields;
+
+  const TemplateInfo({
+    required this.cardsPerPage,
+    required this.mode,
+    this.placeholders = const [],
+    this.labeledFields = const {},
+  });
 }
 
 class MergeEngine {
   static final RegExp _placeholderRegex =
       RegExp(r'\{\{\s*([^{}]+?)\s*\}\}|«\s*([^«»]+?)\s*»');
+
+  static final Map<String, RegExp> _labelRegex = {
+    'name': RegExp(r'(اسم\s+الطالب(?:ة)?|الاسم)\s*[:：]\s*'),
+    'grade': RegExp(r'(الصف(?:\s+الدراسي)?)\s*[:：]\s*'),
+    'committee': RegExp(r'(اللجن[ةه](?:\s+رقم)?)\s*[:：]\s*'),
+    'seat': RegExp(r'(رقم\s+الجلوس|أرقام\s+الجلوس|ارقام\s+الجلوس)\s*[:：]\s*'),
+  };
+
+  static const List<String> _gradeWords = [
+    'الاول',
+    'الأول',
+    'الاولى',
+    'الأولى',
+    'الثاني',
+    'الثانية',
+    'الثالث',
+    'الثالثة',
+    'الرابع',
+    'الرابعة',
+    'الخامس',
+    'الخامسة',
+    'السادس',
+    'السادسة',
+    'السابع',
+    'السابعة',
+    'الثامن',
+    'الثامنة',
+    'التاسع',
+    'التاسعة',
+    'العاشر',
+    'العاشرة',
+    'اول',
+    'أول',
+    'ثاني',
+    'ثالث',
+    'رابع',
+    'خامس',
+    'سادس',
+    'سابع',
+    'ثامن',
+    'تاسع',
+    'عاشر',
+  ];
 
   Future<ExcelImportResult> readExcel(Uint8List bytes) async {
     final excel = Excel.decodeBytes(bytes);
@@ -54,105 +156,249 @@ class MergeEngine {
       throw Exception('ملف Excel لا يحتوي على أوراق بيانات.');
     }
 
-    final table = excel.tables.values.first;
-    if (table.rows.isEmpty) {
-      throw Exception('ورقة Excel فارغة.');
-    }
+    final allRecords = <MergeRecord>[];
+    final fields = <String>{};
 
-    String textOf(Data? cell) => cell?.displayText.trim() ?? '';
+    for (final entry in excel.tables.entries) {
+      final sheetName = entry.key;
+      final table = entry.value;
+      if (table.rows.isEmpty) continue;
 
-    final headers = table.rows.first.map(textOf).toList();
-    if (headers.every((e) => e.isEmpty)) {
-      throw Exception('الصف الأول في Excel يجب أن يحتوي على أسماء الأعمدة.');
-    }
+      final rows = table.rows;
+      final maxCols =
+          rows.fold<int>(0, (max, row) => row.length > max ? row.length : max);
+      if (maxCols == 0) continue;
 
-    final normalizedHeaders = <String>{};
-    for (final header in headers.where((e) => e.trim().isNotEmpty)) {
-      final normalized = MergeRecord.normalize(header);
-      if (!normalizedHeaders.add(normalized)) {
-        throw Exception('يوجد عمود مكرر أو متشابه في Excel: $header');
+      final gradeHint = _inferGradeHint(sheetName, rows);
+
+      int? headerRow;
+      final headerMap = <String, int>{};
+
+      for (var r = 0; r < rows.length && r < 10; r++) {
+        final candidate = <String, int>{};
+        for (var c = 0; c < rows[r].length; c++) {
+          final value = _cellText(rows[r][c]);
+          final canonical = _canonicalHeader(value);
+          if (canonical != null) candidate[canonical] = c;
+        }
+
+        if (candidate.length >= 2) {
+          headerRow = r;
+          headerMap.addAll(candidate);
+          break;
+        }
+      }
+
+      final scanStart = headerRow == null ? 0 : headerRow + 1;
+
+      final numericScores = List<int>.filled(maxCols, 0);
+      final nameScores = List<int>.filled(maxCols, 0);
+      final gradeScores = List<int>.filled(maxCols, 0);
+      final committeeScores = List<int>.filled(maxCols, 0);
+
+      for (var r = scanStart; r < rows.length; r++) {
+        final row = rows[r];
+
+        for (var c = 0; c < maxCols; c++) {
+          final text = c < row.length ? _cellText(row[c]) : '';
+          if (text.isEmpty) continue;
+
+          if (_looksNumeric(text)) numericScores[c]++;
+          if (_looksLikeName(text)) nameScores[c]++;
+          if (_looksLikeGrade(text)) gradeScores[c]++;
+          if (_looksLikeCommittee(text)) committeeScores[c]++;
+        }
+      }
+
+      int? bestColumn(List<int> scores, {int minScore = 1}) {
+        var best = -1;
+        var bestScore = minScore - 1;
+
+        for (var i = 0; i < scores.length; i++) {
+          if (scores[i] > bestScore) {
+            bestScore = scores[i];
+            best = i;
+          }
+        }
+
+        return best < 0 ? null : best;
+      }
+
+      var seatCol = headerMap['seat'];
+      final inferredSeat = bestColumn(numericScores, minScore: 2);
+
+      if (seatCol == null ||
+          numericScores[seatCol] == 0 ||
+          (inferredSeat != null &&
+              numericScores[inferredSeat] > numericScores[seatCol] * 2)) {
+        seatCol = inferredSeat;
+      }
+
+      var nameCol = headerMap['name'];
+      nameCol ??= bestColumn(nameScores, minScore: 2);
+
+      var gradeCol = headerMap['grade'];
+      if (gradeCol == null || gradeScores[gradeCol] == 0) {
+        gradeCol = bestColumn(gradeScores, minScore: 2);
+      }
+
+      var committeeCol = headerMap['committee'];
+      if (committeeCol == null || committeeScores[committeeCol] == 0) {
+        final inferredCommittee = bestColumn(committeeScores, minScore: 2);
+        if (inferredCommittee != gradeCol) committeeCol = inferredCommittee;
+      }
+
+      if (seatCol == null || nameCol == null) continue;
+
+      for (var r = scanStart; r < rows.length; r++) {
+        final row = rows[r];
+
+        final seatText = _textAt(row, seatCol);
+        final nameText = _textAt(row, nameCol);
+
+        if (!_looksNumeric(seatText) || !_looksLikeName(nameText)) continue;
+
+        final gradeText =
+            gradeCol == null ? '' : _textAt(row, gradeCol).trim();
+        final committeeText =
+            committeeCol == null ? '' : _textAt(row, committeeCol).trim();
+
+        final seat = _normalizeNumber(seatText);
+        final grade = gradeText.isNotEmpty ? gradeText : gradeHint;
+        final committee = committeeText;
+
+        final raw = <String, String>{
+          'اسم الطالبة': nameText,
+          'اسم الطالب': nameText,
+          'الاسم': nameText,
+          'الصف': grade,
+          'اللجنة': committee,
+          'رقم الجلوس': seat,
+          'ارقام الجلوس': seat,
+        };
+
+        if (headerRow != null) {
+          for (final mapEntry in headerMap.entries) {
+            final col = mapEntry.value;
+            final header =
+                col < rows[headerRow].length ? _cellText(rows[headerRow][col]) : '';
+            if (header.isNotEmpty) raw[header] = _textAt(row, col);
+          }
+        }
+
+        allRecords.add(
+          MergeRecord(
+            name: nameText,
+            grade: grade,
+            committee: committee,
+            seat: seat,
+            raw: raw,
+          ),
+        );
+
+        fields.addAll(['name', 'grade', 'seat']);
+        if (committee.isNotEmpty) fields.add('committee');
       }
     }
 
-    final records = <MergeRecord>[];
-    for (final row in table.rows.skip(1)) {
-      final values = <String, String>{};
-      var hasAnyValue = false;
-
-      for (var i = 0; i < headers.length; i++) {
-        final header = headers[i].trim();
-        if (header.isEmpty) continue;
-
-        final value = i < row.length ? textOf(row[i]) : '';
-        if (value.isNotEmpty) hasAnyValue = true;
-        values[header] = value;
-      }
-
-      if (hasAnyValue) records.add(MergeRecord(values));
+    if (allRecords.isEmpty) {
+      throw Exception(
+        'لم أستطع اكتشاف بيانات الطلاب تلقائيًا. يجب أن يحتوي كل طالب على رقم جلوس واسم على الأقل.',
+      );
     }
 
-    if (records.isEmpty) {
-      throw Exception('لم يتم العثور على بيانات طلاب بعد صف العناوين.');
-    }
-
-    return ExcelImportResult(headers, records);
+    return ExcelImportResult(
+      records: allRecords,
+      sheetCount: excel.tables.length,
+      detectedFields: fields,
+    );
   }
 
   TemplateInfo inspectWord(Uint8List bytes) {
     final archive = ZipDecoder().decodeBytes(bytes);
     final documentFile = _findFile(archive, 'word/document.xml');
-    final doc = XmlDocument.parse(
+    final document = XmlDocument.parse(
       utf8.decode(documentFile.content as List<int>),
     );
 
-    final placeholders = <String>{};
-    for (final paragraph in doc.descendants
+    final body = document.descendants
         .whereType<XmlElement>()
-        .where((e) => e.name.local == 'p')) {
-      final text = _paragraphText(paragraph);
+        .firstWhere((element) => element.name.local == 'body');
+
+    final table = _findTemplateTable(body);
+    if (table == null) {
+      throw Exception(
+        'لم أتعرف على صفحة البطاقات في Word. يجب أن تكون البطاقات داخل جدول كما في الملف المرفق.',
+      );
+    }
+
+    final cardCells = _cardCells(table);
+    if (cardCells.isEmpty) {
+      throw Exception('لم أتعرف على بطاقات قابلة للدمج داخل Word.');
+    }
+
+    final placeholders = <String>{};
+    final labeledFields = <String>{};
+
+    for (final cell in cardCells) {
+      final text = _elementText(cell);
+
       for (final match in _placeholderRegex.allMatches(text)) {
         final field = (match.group(1) ?? match.group(2) ?? '').trim();
         if (field.isNotEmpty) placeholders.add(field);
       }
+
+      for (final entry in _labelRegex.entries) {
+        if (entry.value.hasMatch(text)) labeledFields.add(entry.key);
+      }
     }
 
-    final body = doc.descendants
-        .whereType<XmlElement>()
-        .firstWhere((e) => e.name.local == 'body');
-
-    final table = _firstTopLevelTable(body.children);
-    if (table == null) {
-      throw Exception(
-        'قالب Word يجب أن يحتوي على البطاقات داخل جدول في الصفحة، مثل 5 صفوف × عمودين.',
-      );
-    }
-
-    final cards = _topLevelCells(table).length;
-    if (cards == 0) {
-      throw Exception('جدول Word لا يحتوي على بطاقات قابلة للدمج.');
-    }
-
-    if (placeholders.isEmpty) {
-      throw Exception(
-        'لم يتم العثور على حقول دمج في Word. استخدم مثل {{الاسم}} أو «الاسم».',
-      );
-    }
-
-    return TemplateInfo(placeholders.toList()..sort(), cards);
+    return TemplateInfo(
+      cardsPerPage: cardCells.length,
+      mode: placeholders.isNotEmpty
+          ? WordTemplateMode.placeholders
+          : WordTemplateMode.labeledCards,
+      placeholders: placeholders.toList()..sort(),
+      labeledFields: labeledFields,
+    );
   }
 
   List<String> missingFields(
-    List<String> excelHeaders,
-    List<String> wordFields,
+    ExcelImportResult excel,
+    TemplateInfo template,
   ) {
-    final normalizedHeaders =
-        excelHeaders.map(MergeRecord.normalize).toSet();
+    final missing = <String>[];
 
-    return wordFields
-        .where(
-          (field) => !normalizedHeaders.contains(MergeRecord.normalize(field)),
-        )
-        .toList();
+    if (template.mode == WordTemplateMode.placeholders) {
+      for (final field in template.placeholders) {
+        final hasValue = excel.records.any(
+          (record) => record.valueFor(field).isNotEmpty,
+        );
+        if (!hasValue) missing.add(field);
+      }
+      return missing;
+    }
+
+    bool hasField(String canonical) {
+      switch (canonical) {
+        case 'name':
+          return excel.records.any((record) => record.name.isNotEmpty);
+        case 'grade':
+          return excel.records.any((record) => record.grade.isNotEmpty);
+        case 'committee':
+          // Empty committee is valid for a whole sheet, as in the supplied sixth-grade sheet.
+          return true;
+        case 'seat':
+          return excel.records.any((record) => record.seat.isNotEmpty);
+      }
+      return true;
+    }
+
+    for (final field in template.labeledFields) {
+      if (!hasField(field)) missing.add(field);
+    }
+
+    return missing;
   }
 
   Uint8List mergeDocx({
@@ -165,95 +411,108 @@ class MergeEngine {
 
     final archive = ZipDecoder().decodeBytes(templateBytes);
     final documentFile = _findFile(archive, 'word/document.xml');
-    final sourceDoc = XmlDocument.parse(
+    final document = XmlDocument.parse(
       utf8.decode(documentFile.content as List<int>),
     );
 
-    final body = sourceDoc.descendants
+    final body = document.descendants
         .whereType<XmlElement>()
-        .firstWhere((e) => e.name.local == 'body');
+        .firstWhere((element) => element.name.local == 'body');
 
-    final originalChildren = body.children.map((node) => node.copy()).toList();
-    final sectionProps = originalChildren
-        .whereType<XmlElement>()
-        .where((e) => e.name.local == 'sectPr')
-        .toList();
+    final directChildren = body.children.toList();
+    final templateTable = _findTemplateTable(body);
 
-    final pageChildren = originalChildren
-        .where(
-          (node) =>
-              !(node is XmlElement && node.name.local == 'sectPr'),
-        )
-        .toList();
-
-    final probe = _firstTopLevelTable(pageChildren);
-    if (probe == null) {
-      throw Exception('تعذر العثور على جدول البطاقات داخل Word.');
+    if (templateTable == null) {
+      throw Exception('تعذر العثور على جدول البطاقات في Word.');
     }
 
-    final cardsPerPage = _topLevelCells(probe).length;
-    if (cardsPerPage == 0) {
-      throw Exception('جدول Word لا يحتوي على خلايا بطاقات.');
+    final templateIndex = directChildren.indexOf(templateTable);
+    XmlElement? sectionBreakParagraph;
+
+    for (var i = templateIndex + 1; i < directChildren.length; i++) {
+      final node = directChildren[i];
+
+      if (node is XmlElement && node.name.local == 'p') {
+        final hasSectPr = node.descendants
+            .whereType<XmlElement>()
+            .any((element) => element.name.local == 'sectPr');
+
+        if (hasSectPr) {
+          sectionBreakParagraph = node;
+          break;
+        }
+      }
+
+      if (node is XmlElement && node.name.local == 'tbl') break;
+    }
+
+    XmlElement? finalSectPr;
+    for (final node in directChildren.reversed) {
+      if (node is XmlElement && node.name.local == 'sectPr') {
+        finalSectPr = node;
+        break;
+      }
+    }
+
+    final templateCardCount = _cardCells(templateTable).length;
+    if (templateCardCount == 0) {
+      throw Exception('صفحة Word لا تحتوي على بطاقات قابلة للدمج.');
     }
 
     body.children.clear();
 
-    var offset = 0;
     var pageIndex = 0;
 
-    while (offset < records.length) {
-      final clonedPage = pageChildren.map((node) => node.copy()).toList();
-      final table = _firstTopLevelTable(clonedPage);
-      if (table == null) {
-        throw Exception('تعذر نسخ جدول البطاقات.');
-      }
+    for (var offset = 0;
+        offset < records.length;
+        offset += templateCardCount) {
+      final clonedTable = templateTable.copy() as XmlElement;
+      final cells = _cardCells(clonedTable);
 
-      final cells = _topLevelCells(table);
-      if (cells.length != cardsPerPage) {
-        throw Exception('بنية جدول البطاقات تغيرت أثناء الدمج.');
+      if (cells.length != templateCardCount) {
+        throw Exception('تغيّر عدد البطاقات أثناء نسخ تصميم Word.');
       }
 
       for (var cardIndex = 0; cardIndex < cells.length; cardIndex++) {
-        final studentIndex = offset + cardIndex;
+        final recordIndex = offset + cardIndex;
 
-        if (studentIndex < records.length) {
-          _replaceInCell(cells[cardIndex], records[studentIndex]);
+        if (recordIndex < records.length) {
+          _mergeCard(cells[cardIndex], records[recordIndex]);
         } else {
-          _clearPlaceholders(cells[cardIndex]);
+          _clearCardValues(cells[cardIndex]);
         }
       }
 
       if (pageIndex > 0) {
-        body.children.add(_pageBreak());
+        if (sectionBreakParagraph != null) {
+          body.children.add(sectionBreakParagraph.copy());
+        } else {
+          body.children.add(_pageBreakBeforeParagraph());
+        }
       }
 
-      body.children.addAll(clonedPage);
-      offset += cardsPerPage;
+      body.children.add(clonedTable);
       pageIndex++;
     }
 
-    if (sectionProps.isNotEmpty) {
-      body.children.add(sectionProps.first.copy());
+    if (finalSectPr != null) {
+      body.children.add(finalSectPr.copy());
     }
 
-    final mergedXml = sourceDoc.toXmlString(pretty: false);
-    final outputArchive = Archive();
+    final mergedXml = document.toXmlString(pretty: false);
+    final output = Archive();
 
     for (final file in archive) {
       if (file.name == 'word/document.xml') {
         final data = utf8.encode(mergedXml);
-        outputArchive.addFile(
-          ArchiveFile(file.name, data.length, data),
-        );
+        output.addFile(ArchiveFile(file.name, data.length, data));
       } else {
         final data = file.content as List<int>;
-        outputArchive.addFile(
-          ArchiveFile(file.name, data.length, data),
-        );
+        output.addFile(ArchiveFile(file.name, data.length, data));
       }
     }
 
-    final zipped = ZipEncoder().encode(outputArchive);
+    final zipped = ZipEncoder().encode(output);
     if (zipped.isEmpty) {
       throw Exception('تعذر إنشاء ملف Word المدموج.');
     }
@@ -261,66 +520,12 @@ class MergeEngine {
     return Uint8List.fromList(zipped);
   }
 
-  Future<Uint8List> buildDesignPdfFromTemplate({
-    required Uint8List templateBytes,
-    required List<MergeRecord> records,
-  }) async {
-    if (records.isEmpty) {
-      throw Exception('لا توجد بيانات طلاب لإنشاء PDF.');
-    }
-
+  Future<Uint8List> buildDesignPdfFromDocx(Uint8List mergedDocx) async {
     try {
-      final templateInfo = inspectWord(templateBytes);
-      final cardsPerPage = templateInfo.cardsPerPage;
-      final combinedElements = <DocxNode>[];
-      DocxBuiltDocument? baseDocument;
+      final pageBreakAware = _makePdfPageBreakAware(mergedDocx);
+      final document = await DocxReader.loadFromBytes(pageBreakAware);
+      final pdf = await PdfExporter().exportToBytes(document);
 
-      final pageBreak = docx().pageBreak().build().elements.first;
-
-      for (var offset = 0; offset < records.length; offset += cardsPerPage) {
-        final end = offset + cardsPerPage < records.length
-            ? offset + cardsPerPage
-            : records.length;
-
-        final pageDocx = mergeDocx(
-          templateBytes: templateBytes,
-          records: records.sublist(offset, end),
-        );
-
-        final pageDocument = await DocxReader.loadFromBytes(pageDocx);
-        baseDocument ??= pageDocument;
-
-        if (combinedElements.isNotEmpty) {
-          combinedElements.add(pageBreak);
-        }
-        combinedElements.addAll(pageDocument.elements);
-      }
-
-      final source = baseDocument!;
-      final pagedDocument = DocxBuiltDocument(
-        elements: combinedElements,
-        section: source.section,
-        stylesXml: source.stylesXml,
-        numberingXml: source.numberingXml,
-        settingsXml: source.settingsXml,
-        fontTableXml: source.fontTableXml,
-        fontTableRelsXml: source.fontTableRelsXml,
-        themeXml: source.themeXml,
-        contentTypesXml: source.contentTypesXml,
-        rootRelsXml: source.rootRelsXml,
-        headerBgXml: source.headerBgXml,
-        headerBgRelsXml: source.headerBgRelsXml,
-        footnotesXml: source.footnotesXml,
-        endnotesXml: source.endnotesXml,
-        numberingRelsXml: source.numberingRelsXml,
-        numberingImages: source.numberingImages,
-        fonts: source.fonts,
-        footnotes: source.footnotes,
-        endnotes: source.endnotes,
-        theme: source.theme,
-      );
-
-      final pdf = await PdfExporter().exportToBytes(pagedDocument);
       if (pdf.isEmpty) {
         throw Exception('تم إنشاء PDF فارغ.');
       }
@@ -328,7 +533,7 @@ class MergeEngine {
       return Uint8List.fromList(pdf);
     } catch (error) {
       throw Exception(
-        'تعذر تحويل Word إلى PDF مع الحفاظ على التصميم: $error',
+        'تعذر تحويل Word إلى PDF على هذا الجهاز مع الحفاظ على التصميم: $error',
       );
     }
   }
@@ -391,143 +596,468 @@ class MergeEngine {
     return null;
   }
 
-  bool fieldMatches(List<String> headers, String field) {
-    final normalized = MergeRecord.normalize(field);
-    return headers.any(
-      (header) => MergeRecord.normalize(header) == normalized,
-    );
-  }
+  void _mergeCard(XmlElement cell, MergeRecord record) {
+    _replacePlaceholders(cell, record);
 
-  void _replaceInCell(XmlElement cell, MergeRecord record) {
     for (final paragraph in cell.descendants
         .whereType<XmlElement>()
-        .where((e) => e.name.local == 'p')) {
-      _replacePlaceholdersInParagraph(
-        paragraph,
-        (field) => record.valueFor(field),
-      );
+        .where((element) => element.name.local == 'p')) {
+      final originalText = _paragraphText(paragraph);
+      if (originalText.isEmpty) continue;
+
+      final matches = <_LabeledMatch>[];
+
+      for (final entry in _labelRegex.entries) {
+        final match = entry.value.firstMatch(originalText);
+        if (match != null) {
+          matches.add(
+            _LabeledMatch(
+              field: entry.key,
+              start: match.start,
+              valueStart: match.end,
+            ),
+          );
+        }
+      }
+
+      if (matches.isEmpty) continue;
+      matches.sort((a, b) => a.start.compareTo(b.start));
+
+      for (var i = matches.length - 1; i >= 0; i--) {
+        final current = matches[i];
+        final valueEnd =
+            i + 1 < matches.length ? matches[i + 1].start : originalText.length;
+
+        var replacement = _canonicalValue(record, current.field);
+
+        if (current.field == 'seat') {
+          final oldValue = originalText
+              .substring(current.valueStart, valueEnd)
+              .trim();
+
+          if (oldValue.contains('(') || oldValue.contains(')')) {
+            replacement = replacement.isEmpty ? '' : '( $replacement )';
+          }
+        }
+
+        _replaceTextRange(
+          paragraph,
+          current.valueStart,
+          valueEnd,
+          replacement,
+        );
+      }
     }
   }
 
-  void _clearPlaceholders(XmlElement cell) {
+  void _clearCardValues(XmlElement cell) {
+    _replacePlaceholders(cell, const MergeRecord(
+      name: '',
+      grade: '',
+      committee: '',
+      seat: '',
+    ));
+
     for (final paragraph in cell.descendants
         .whereType<XmlElement>()
-        .where((e) => e.name.local == 'p')) {
-      _replacePlaceholdersInParagraph(paragraph, (_) => '');
+        .where((element) => element.name.local == 'p')) {
+      final originalText = _paragraphText(paragraph);
+      final matches = <_LabeledMatch>[];
+
+      for (final entry in _labelRegex.entries) {
+        final match = entry.value.firstMatch(originalText);
+        if (match != null) {
+          matches.add(
+            _LabeledMatch(
+              field: entry.key,
+              start: match.start,
+              valueStart: match.end,
+            ),
+          );
+        }
+      }
+
+      if (matches.isEmpty) continue;
+      matches.sort((a, b) => a.start.compareTo(b.start));
+
+      for (var i = matches.length - 1; i >= 0; i--) {
+        final valueEnd =
+            i + 1 < matches.length ? matches[i + 1].start : originalText.length;
+
+        _replaceTextRange(
+          paragraph,
+          matches[i].valueStart,
+          valueEnd,
+          '',
+        );
+      }
     }
   }
 
-  void _replacePlaceholdersInParagraph(
+  void _replacePlaceholders(XmlElement cell, MergeRecord record) {
+    for (final paragraph in cell.descendants
+        .whereType<XmlElement>()
+        .where((element) => element.name.local == 'p')) {
+      final original = _paragraphText(paragraph);
+      final matches = _placeholderRegex.allMatches(original).toList();
+
+      for (final match in matches.reversed) {
+        final field = (match.group(1) ?? match.group(2) ?? '').trim();
+        _replaceTextRange(
+          paragraph,
+          match.start,
+          match.end,
+          record.valueFor(field),
+        );
+      }
+    }
+  }
+
+  void _replaceTextRange(
     XmlElement paragraph,
-    String Function(String field) resolver,
+    int start,
+    int end,
+    String replacement,
   ) {
     final textNodes = paragraph.descendants
         .whereType<XmlElement>()
-        .where((e) => e.name.local == 't')
+        .where((element) => element.name.local == 't')
         .toList();
 
-    if (textNodes.isEmpty) return;
+    if (textNodes.isEmpty || end < start) return;
 
-    final originalParts =
+    final parts =
         textNodes.map((node) => node.innerText).toList(growable: false);
-    final joined = originalParts.join();
-    final matches = _placeholderRegex.allMatches(joined).toList();
-
-    if (matches.isEmpty) return;
-
     final starts = <int>[];
+
     var cursor = 0;
-    for (final part in originalParts) {
+    for (final part in parts) {
       starts.add(cursor);
       cursor += part.length;
     }
 
-    int nodeIndexForOffset(int offset) {
+    int nodeForOffset(int offset) {
       if (offset <= 0) return 0;
 
-      for (var i = 0; i < originalParts.length; i++) {
-        final start = starts[i];
-        final end = start + originalParts[i].length;
-        if (offset < end || (offset == end && i == originalParts.length - 1)) {
+      for (var i = 0; i < parts.length; i++) {
+        final nodeStart = starts[i];
+        final nodeEnd = nodeStart + parts[i].length;
+
+        if (offset < nodeEnd ||
+            (offset == nodeEnd && i == parts.length - 1)) {
           return i;
         }
       }
 
-      return originalParts.length - 1;
+      return parts.length - 1;
     }
 
-    for (final match in matches.reversed) {
-      final field = (match.group(1) ?? match.group(2) ?? '').trim();
-      final replacement = resolver(field);
+    final startNode = nodeForOffset(start);
+    final endNode = nodeForOffset(end > start ? end - 1 : end);
 
-      final startIndex = nodeIndexForOffset(match.start);
-      final endIndex = nodeIndexForOffset(match.end - 1);
+    final startLocal = (start - starts[startNode])
+        .clamp(0, textNodes[startNode].innerText.length);
 
-      final startLocal = match.start - starts[startIndex];
-      final endLocal = match.end - starts[endIndex];
+    final endLocal = (end - starts[endNode])
+        .clamp(0, textNodes[endNode].innerText.length);
 
-      if (startIndex == endIndex) {
-        final current = textNodes[startIndex].innerText;
-        textNodes[startIndex].innerText = current.replaceRange(
-          startLocal,
-          endLocal,
-          replacement,
-        );
+    if (startNode == endNode) {
+      final current = textNodes[startNode].innerText;
+      textNodes[startNode].innerText =
+          current.replaceRange(startLocal, endLocal, replacement);
+      return;
+    }
+
+    final first = textNodes[startNode].innerText;
+    final last = textNodes[endNode].innerText;
+
+    textNodes[startNode].innerText =
+        first.substring(0, startLocal) + replacement;
+
+    for (var i = startNode + 1; i < endNode; i++) {
+      textNodes[i].innerText = '';
+    }
+
+    textNodes[endNode].innerText = last.substring(endLocal);
+  }
+
+  Uint8List _makePdfPageBreakAware(Uint8List bytes) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentFile = _findFile(archive, 'word/document.xml');
+    final document = XmlDocument.parse(
+      utf8.decode(documentFile.content as List<int>),
+    );
+
+    final body = document.descendants
+        .whereType<XmlElement>()
+        .firstWhere((element) => element.name.local == 'body');
+
+    var seenTemplateTable = false;
+
+    for (final child in body.childElements.toList()) {
+      if (child.name.local != 'tbl') continue;
+      if (_cardCells(child).isEmpty) continue;
+
+      if (!seenTemplateTable) {
+        seenTemplateTable = true;
         continue;
       }
 
-      final firstText = textNodes[startIndex].innerText;
-      final lastText = textNodes[endIndex].innerText;
+      final firstParagraph = child.descendants
+          .whereType<XmlElement>()
+          .where((element) => element.name.local == 'p')
+          .firstOrNull;
 
-      textNodes[startIndex].innerText =
-          firstText.substring(0, startLocal) + replacement;
+      if (firstParagraph == null) continue;
 
-      for (var i = startIndex + 1; i < endIndex; i++) {
-        textNodes[i].innerText = '';
+      var pPr = firstParagraph.childElements
+          .where((element) => element.name.local == 'pPr')
+          .firstOrNull;
+
+      if (pPr == null) {
+        pPr = XmlElement(XmlName('w:pPr'));
+        firstParagraph.children.insert(0, pPr);
       }
 
-      textNodes[endIndex].innerText =
-          lastText.substring(endLocal.clamp(0, lastText.length));
+      final hasPageBreak = pPr.childElements
+          .any((element) => element.name.local == 'pageBreakBefore');
+
+      if (!hasPageBreak) {
+        pPr.children.add(XmlElement(XmlName('w:pageBreakBefore')));
+      }
     }
+
+    final data = utf8.encode(document.toXmlString(pretty: false));
+    final output = Archive();
+
+    for (final file in archive) {
+      if (file.name == 'word/document.xml') {
+        output.addFile(ArchiveFile(file.name, data.length, data));
+      } else {
+        final original = file.content as List<int>;
+        output.addFile(
+          ArchiveFile(file.name, original.length, original),
+        );
+      }
+    }
+
+    final zipped = ZipEncoder().encode(output);
+    return Uint8List.fromList(zipped);
+  }
+
+  XmlElement? _findTemplateTable(XmlElement body) {
+    XmlElement? best;
+    var bestCount = 0;
+
+    for (final child in body.childElements) {
+      if (child.name.local != 'tbl') continue;
+
+      final count = _cardCells(child).length;
+      if (count > bestCount) {
+        best = child;
+        bestCount = count;
+      }
+
+      if (count >= 2) return child;
+    }
+
+    return bestCount > 0 ? best : null;
+  }
+
+  List<XmlElement> _cardCells(XmlElement table) {
+    final result = <XmlElement>[];
+
+    for (final row in table.childElements
+        .where((element) => element.name.local == 'tr')) {
+      for (final cell in row.childElements
+          .where((element) => element.name.local == 'tc')) {
+        final text = _elementText(cell);
+        final placeholders = _placeholderRegex.hasMatch(text);
+
+        var labelHits = 0;
+        if (_labelRegex['name']!.hasMatch(text)) labelHits++;
+        if (_labelRegex['grade']!.hasMatch(text)) labelHits++;
+        if (_labelRegex['committee']!.hasMatch(text)) labelHits++;
+        if (_labelRegex['seat']!.hasMatch(text)) labelHits++;
+
+        if (placeholders || labelHits >= 2) result.add(cell);
+      }
+    }
+
+    return result;
+  }
+
+  static String _canonicalValue(MergeRecord record, String field) {
+    switch (field) {
+      case 'name':
+        return record.name;
+      case 'grade':
+        return record.grade;
+      case 'committee':
+        return record.committee;
+      case 'seat':
+        return record.seat;
+    }
+    return '';
   }
 
   static String _paragraphText(XmlElement paragraph) {
     return paragraph.descendants
         .whereType<XmlElement>()
-        .where((e) => e.name.local == 't')
-        .map((e) => e.innerText)
+        .where((element) => element.name.local == 't')
+        .map((element) => element.innerText)
         .join();
   }
 
-  static XmlElement? _firstTopLevelTable(Iterable<XmlNode> nodes) {
-    for (final node in nodes) {
-      if (node is XmlElement && node.name.local == 'tbl') {
-        return node;
+  static String _elementText(XmlElement element) {
+    return element.descendants
+        .whereType<XmlElement>()
+        .where((node) => node.name.local == 't')
+        .map((node) => node.innerText)
+        .join('\n');
+  }
+
+  static String _cellText(Data? cell) => cell?.displayText.trim() ?? '';
+
+  static String _textAt(List<Data?> row, int column) {
+    if (column < 0 || column >= row.length) return '';
+    return _cellText(row[column]);
+  }
+
+  static bool _looksNumeric(String text) {
+    final normalized =
+        text.replaceAll(RegExp(r'[٠-٩]'), (match) {
+      const eastern = '٠١٢٣٤٥٦٧٨٩';
+      return eastern.indexOf(match.group(0)!).toString();
+    }).trim();
+
+    return RegExp(r'^\d+(?:\.0+)?$').hasMatch(normalized);
+  }
+
+  static String _normalizeNumber(String text) {
+    var normalized =
+        text.replaceAll(RegExp(r'[٠-٩]'), (match) {
+      const eastern = '٠١٢٣٤٥٦٧٨٩';
+      return eastern.indexOf(match.group(0)!).toString();
+    }).trim();
+
+    if (RegExp(r'^\d+\.0+$').hasMatch(normalized)) {
+      normalized = normalized.substring(0, normalized.indexOf('.'));
+    }
+
+    return normalized;
+  }
+
+  static bool _looksLikeName(String text) {
+    final value = text.trim();
+    if (value.length < 7) return false;
+    if (_looksNumeric(value)) return false;
+    if (_canonicalHeader(value) != null) return false;
+    if (_looksLikeGrade(value) || _looksLikeCommittee(value)) return false;
+
+    return value.split(RegExp(r'\s+')).length >= 2;
+  }
+
+  static bool _looksLikeGrade(String text) {
+    final normalized = MergeRecord.normalize(text);
+
+    return _gradeWords.any(
+      (word) => MergeRecord.normalize(word) == normalized,
+    );
+  }
+
+  static bool _looksLikeCommittee(String text) {
+    final normalized = MergeRecord.normalize(text);
+    const committees = [
+      'الاولى',
+      'الأولى',
+      'الثانية',
+      'الثالثة',
+      'الرابعة',
+      'الخامسة',
+      'السادسة',
+      'السابعة',
+      'الثامنة',
+      'التاسعة',
+      'العاشرة',
+    ];
+
+    return committees.any(
+      (word) => MergeRecord.normalize(word) == normalized,
+    );
+  }
+
+  static String _inferGradeHint(
+    String sheetName,
+    List<List<Data?>> rows,
+  ) {
+    final candidates = <String>[sheetName];
+
+    for (var r = 0; r < rows.length && r < 8; r++) {
+      for (final cell in rows[r]) {
+        final text = _cellText(cell);
+        if (text.isNotEmpty) candidates.add(text);
       }
     }
+
+    const canonicalGrades = {
+      'اول': 'الاول',
+      'الأول': 'الاول',
+      'الاول': 'الاول',
+      'ثاني': 'الثاني',
+      'الثاني': 'الثاني',
+      'ثالث': 'الثالث',
+      'الثالث': 'الثالث',
+      'رابع': 'الرابع',
+      'الرابع': 'الرابع',
+      'خامس': 'الخامس',
+      'الخامس': 'الخامس',
+      'سادس': 'السادس',
+      'السادس': 'السادس',
+      'سابع': 'السابع',
+      'السابع': 'السابع',
+      'ثامن': 'الثامن',
+      'الثامن': 'الثامن',
+      'تاسع': 'التاسع',
+      'التاسع': 'التاسع',
+      'عاشر': 'العاشر',
+      'العاشر': 'العاشر',
+    };
+
+    for (final candidate in candidates) {
+      final normalized = MergeRecord.normalize(candidate);
+
+      for (final entry in canonicalGrades.entries) {
+        final key = MergeRecord.normalize(entry.key);
+
+        if (normalized == key || normalized.contains(key)) {
+          return entry.value;
+        }
+      }
+    }
+
+    return '';
+  }
+
+  static String? _canonicalHeader(String text) {
+    final normalized = MergeRecord.normalize(text);
+    if (normalized.isEmpty) return null;
+
+    if (MergeRecord._nameAliases.contains(normalized)) return 'name';
+    if (MergeRecord._gradeAliases.contains(normalized)) return 'grade';
+    if (MergeRecord._committeeAliases.contains(normalized)) {
+      return 'committee';
+    }
+    if (MergeRecord._seatAliases.contains(normalized)) return 'seat';
+
     return null;
   }
 
-  static List<XmlElement> _topLevelCells(XmlElement table) {
-    final cells = <XmlElement>[];
-
-    for (final row in table.childElements.where(
-      (element) => element.name.local == 'tr',
-    )) {
-      cells.addAll(
-        row.childElements.where(
-          (element) => element.name.local == 'tc',
-        ),
-      );
-    }
-
-    return cells;
-  }
-
-  static XmlElement _pageBreak() {
+  static XmlElement _pageBreakBeforeParagraph() {
     return XmlDocument.parse(
       '<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-      '<w:r><w:br w:type="page"/></w:r></w:p>',
+      '<w:pPr><w:pageBreakBefore/></w:pPr>'
+      '</w:p>',
     ).rootElement;
   }
 
@@ -537,5 +1067,24 @@ class MergeEngine {
     }
 
     throw Exception('ملف Word غير صالح: $name غير موجود.');
+  }
+}
+
+class _LabeledMatch {
+  final String field;
+  final int start;
+  final int valueStart;
+
+  const _LabeledMatch({
+    required this.field,
+    required this.start,
+    required this.valueStart,
+  });
+}
+
+extension _FirstOrNullExtension<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    return iterator.moveNext() ? iterator.current : null;
   }
 }
