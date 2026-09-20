@@ -56,17 +56,19 @@ class _HomePageState extends State<HomePage> {
   Uint8List? _excelBytes;
   Uint8List? _wordBytes;
 
-  List<String> _headers = const [];
-  List<MergeRecord> _records = const [];
+  ExcelImportResult? _excel;
   TemplateInfo? _template;
 
   bool _busy = false;
-  String _status = 'اختر ملف Excel ثم قالب Word لبدء الدمج.';
+  String _status = 'اختر ملف Excel ثم ملف Word لبدء الدمج.';
+
+  List<MergeRecord> get _records => _excel?.records ?? const [];
 
   List<String> get _missingFields {
+    final excel = _excel;
     final template = _template;
-    if (template == null) return const [];
-    return _engine.missingFields(_headers, template.placeholders);
+    if (excel == null || template == null) return const [];
+    return _engine.missingFields(excel, template);
   }
 
   Future<void> _pickExcel() async {
@@ -78,7 +80,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _busy = true;
-      _status = 'جارٍ قراءة ملف Excel...';
+      _status = 'جارٍ تحليل Excel واكتشاف الأوراق والأعمدة تلقائيًا...';
     });
 
     try {
@@ -89,13 +91,12 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _excelFile = file;
         _excelBytes = bytes;
-        _headers = result.headers;
-        _records = result.records;
+        _excel = result;
 
         final missing = _missingFields;
         _status = missing.isEmpty
-            ? 'تمت قراءة ${_records.length} طالب من Excel.'
-            : 'تمت قراءة Excel، لكن توجد حقول في Word غير موجودة في Excel.';
+            ? 'تم اكتشاف ${result.records.length} طالب/طالبة من ${result.sheetCount} أوراق.'
+            : 'تمت قراءة Excel، لكن بعض بيانات Word المطلوبة غير متوفرة.';
       });
     } catch (error) {
       _showError(error);
@@ -113,7 +114,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _busy = true;
-      _status = 'جارٍ فحص قالب Word...';
+      _status = 'جارٍ تحليل تصميم Word واكتشاف البطاقات...';
     });
 
     try {
@@ -127,9 +128,13 @@ class _HomePageState extends State<HomePage> {
         _template = info;
 
         final missing = _missingFields;
+        final modeText = info.mode == WordTemplateMode.placeholders
+            ? 'حقول دمج'
+            : 'حقول مكتوبة داخل البطاقة';
+
         _status = missing.isEmpty
-            ? 'تم اكتشاف ${info.cardsPerPage} بطاقة في الصفحة و${info.placeholders.length} حقول دمج.'
-            : 'تم تحميل Word، لكن بعض حقوله غير موجودة في Excel.';
+            ? 'تم اكتشاف ${info.cardsPerPage} بطاقات في الصفحة باستخدام $modeText.'
+            : 'تم تحميل Word، لكن توجد بيانات مطلوبة غير متوفرة في Excel.';
       });
     } catch (error) {
       _showError(error);
@@ -143,14 +148,14 @@ class _HomePageState extends State<HomePage> {
         _wordBytes == null ||
         _records.isEmpty ||
         _template == null) {
-      _showError('اختر ملف Excel وقالب Word أولاً.');
+      _showError('اختر ملف Excel وملف Word أولاً.');
       return;
     }
 
     final missing = _missingFields;
     if (missing.isNotEmpty) {
       _showError(
-        'لا يمكن الدمج قبل مطابقة هذه الحقول مع أعمدة Excel: ${missing.join('، ')}',
+        'لا يمكن الدمج قبل توفير هذه البيانات: ${missing.join('، ')}',
       );
       return;
     }
@@ -158,7 +163,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _busy = true;
       _status =
-          'جارٍ دمج ${_records.length} طالب داخل ${_template!.cardsPerPage} بطاقة لكل صفحة...';
+          'جارٍ تعبئة ${_records.length} سجل داخل تصميم Word، ${_template!.cardsPerPage} بطاقات لكل صفحة...';
     });
 
     try {
@@ -180,7 +185,7 @@ class _HomePageState extends State<HomePage> {
         if (mounted) {
           setState(() {
             _status =
-                'تم الدمج. جارٍ إنشاء PDF باستخدام Word/LibreOffice لأعلى تطابق مع التصميم...';
+                'تم الدمج. جارٍ تحويل Word إلى PDF بأعلى تطابق مع التصميم...';
           });
         }
         officePdfPath = await _engine.tryWindowsOfficePdf(docxPath);
@@ -193,23 +198,23 @@ class _HomePageState extends State<HomePage> {
         if (mounted) {
           setState(() {
             _status =
-                'جارٍ تحويل ملف Word المدموج إلى PDF مع الحفاظ على الجداول والصور والألوان والحدود...';
+                'جارٍ إنشاء PDF من ملف Word المدموج مع الحفاظ على الجداول والصور والحدود...';
           });
         }
 
-        pdfBytes = await _engine.buildDesignPdfFromTemplate(
-          templateBytes: _wordBytes!,
-          records: _records,
-        );
+        pdfBytes = await _engine.buildDesignPdfFromDocx(mergedDocx);
         pdfPath = p.join(dir.path, 'student_cards_$stamp.pdf');
         await File(pdfPath).writeAsBytes(pdfBytes, flush: true);
       }
 
       if (!mounted) return;
 
+      final pageCount =
+          (_records.length / _template!.cardsPerPage).ceil();
+
       setState(() {
         _status =
-            'تم بنجاح: ${_records.length} طالب، ${_template!.cardsPerPage} بطاقة لكل صفحة، وPDF جاهز للطباعة.';
+            'تم بنجاح: ${_records.length} سجل، $pageCount صفحة، وPDF جاهز للطباعة.';
       });
 
       await _showResult(
@@ -251,7 +256,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'تم دمج ${_records.length} طالب حسب ترتيب صفوف Excel داخل تصميم Word.',
+                    'تم دمج ${_records.length} سجل حسب ترتيب Excel داخل تصميم Word.',
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
@@ -300,13 +305,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  bool _fieldMatches(String field) {
-    return _engine.fieldMatches(_headers, field);
-  }
-
   @override
   Widget build(BuildContext context) {
     final missing = _missingFields;
+
     final ready = _excelBytes != null &&
         _wordBytes != null &&
         _records.isNotEmpty &&
@@ -337,7 +339,7 @@ class _HomePageState extends State<HomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'دمج بطاقات الطلاب — Excel + Word',
+                        'دمج مراسلات للبطاقات — Excel + Word',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -345,7 +347,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Word هو التصميم الأساسي للبطاقات. Excel هو مصدر البيانات فقط. الطالب الأول يذهب للبطاقة الأولى، والثاني للثانية، وهكذا، ثم تبدأ صفحة جديدة تلقائيًا.',
+                        'ارفع Excel وWord كما هما. التطبيق يكتشف بيانات الاسم والصف واللجنة ورقم الجلوس، ويأخذ تصميم البطاقات من Word نفسه دون إعادة تصميمها.',
                       ),
                     ],
                   ),
@@ -356,50 +358,27 @@ class _HomePageState extends State<HomePage> {
                   icon: Icons.table_chart_outlined,
                   title: 'اختر ملف Excel',
                   subtitle: _excelFile == null
-                      ? 'الصف الأول أسماء الأعمدة، وكل صف بعده طالب واحد.'
-                      : '${_excelFile!.name} — ${_records.length} طالب',
+                      ? 'يدعم عدة أوراق، صفوف فارغة، وعناوين غير موحدة.'
+                      : '${_excelFile!.name} — ${_records.length} سجل من ${_excel?.sheetCount ?? 0} أوراق',
                   onTap: _busy ? null : _pickExcel,
                 ),
                 const SizedBox(height: 12),
                 _FileStep(
                   number: '2',
                   icon: Icons.description_outlined,
-                  title: 'اختر قالب Word',
+                  title: 'اختر ملف Word',
                   subtitle: _wordFile == null
-                      ? 'DOCX يحتوي على البطاقات داخل جدول وحقول مثل {{الاسم}}.'
-                      : '${_wordFile!.name} — ${_template?.cardsPerPage ?? 0} بطاقة/صفحة',
+                      ? 'يمكن أن يكون قالبًا أو ملف بطاقات موجودًا بالفعل.'
+                      : '${_wordFile!.name} — ${_template?.cardsPerPage ?? 0} بطاقات/صفحة',
                   onTap: _busy ? null : _pickWord,
                 ),
                 if (_template != null) ...[
-                  const SizedBox(height: 20),
-                  Text(
-                    'مطابقة حقول Word مع أعمدة Excel',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _template!.placeholders.map((field) {
-                      final ok = _fieldMatches(field);
-                      return Chip(
-                        avatar: Icon(
-                          ok
-                              ? Icons.check_circle
-                              : Icons.error_outline_rounded,
-                          size: 18,
-                          color: ok ? Colors.green : Colors.red,
-                        ),
-                        label: Text(field),
-                      );
-                    }).toList(),
-                  ),
+                  const SizedBox(height: 18),
+                  _TemplateSummary(template: _template!),
                   if (missing.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Text(
-                      'لن يسمح التطبيق بالدمج حتى توجد هذه الأعمدة في Excel: ${missing.join('، ')}',
+                      'بيانات ناقصة: ${missing.join('، ')}',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
                         fontWeight: FontWeight.w600,
@@ -423,7 +402,7 @@ class _HomePageState extends State<HomePage> {
                   label: Text(
                     _busy
                         ? 'جارٍ التنفيذ...'
-                        : 'دمج البيانات وإنشاء PDF للطباعة',
+                        : 'دمج البيانات وإنشاء PDF',
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -440,13 +419,79 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 14),
                 Text(
                   Platform.isWindows
-                      ? 'Windows: يستخدم Microsoft Word أو LibreOffice عند توفره للحصول على أعلى تطابق ممكن مع قالب Word، مع محول DOCX داخلي احتياطي.'
-                      : 'Android: يحافظ ملف Word المدموج على القالب الأصلي، ويحوَّل إلى PDF عبر محرك DOCX يدعم الجداول والصور والألوان والحدود.',
+                      ? 'على Windows يتم تفضيل Microsoft Word أو LibreOffice لتحويل الملف المدموج إلى PDF بنفس تخطيط Word.'
+                      : 'على Android يتم الدمج داخل DOCX نفسه ثم تحويله إلى PDF محليًا.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TemplateSummary extends StatelessWidget {
+  final TemplateInfo template;
+
+  const _TemplateSummary({required this.template});
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = template.mode == WordTemplateMode.placeholders
+        ? template.placeholders
+        : template.labeledFields.map((field) {
+            switch (field) {
+              case 'name':
+                return 'الاسم';
+              case 'grade':
+                return 'الصف';
+              case 'committee':
+                return 'اللجنة';
+              case 'seat':
+                return 'رقم الجلوس';
+              default:
+                return field;
+            }
+          }).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'اكتشاف Word',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${template.cardsPerPage} بطاقات في الصفحة — ${template.mode == WordTemplateMode.placeholders ? 'قالب حقول' : 'اكتشاف تلقائي من النص الموجود'}',
+            ),
+            if (fields.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: fields
+                    .map(
+                      (field) => Chip(
+                        avatar: const Icon(
+                          Icons.check_circle,
+                          size: 17,
+                          color: Colors.green,
+                        ),
+                        label: Text(field),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -478,9 +523,7 @@ class _FileStep extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              CircleAvatar(
-                child: Text(number),
-              ),
+              CircleAvatar(child: Text(number)),
               const SizedBox(width: 14),
               Icon(icon, size: 30),
               const SizedBox(width: 14),
