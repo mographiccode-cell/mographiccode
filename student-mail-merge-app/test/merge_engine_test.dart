@@ -160,12 +160,10 @@ void main() {
     final excelResult = await engine.readExcel(_makeExcel(12));
     final templateBytes = await _makeTemplate();
 
-    final merged = engine.mergeDocx(
+    final pdfBytes = await engine.buildDesignPdfFromTemplate(
       templateBytes: templateBytes,
       records: excelResult.records,
     );
-
-    final pdfBytes = await engine.buildDesignPdfFromDocx(merged);
 
     expect(pdfBytes.length, greaterThan(1000));
     expect(
