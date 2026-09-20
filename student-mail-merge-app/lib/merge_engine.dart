@@ -551,15 +551,8 @@ class MergeEngine {
       final family = families[i];
       if (existingFamilies.contains(family.toLowerCase())) continue;
 
-      final suffix = (i + 1).toString().padLeft(12, '0');
-      fonts.add(
-        EmbeddedFont(
-          familyName: family,
-          bytes: fontBytes,
-          obfuscationKey: '{12345678-1234-1234-1234-$suffix}',
-          preservedFilename: 'arabic_fallback.ttf',
-        ),
-      );
+      final fontDocument = docx().addFont(family, fontBytes).build();
+      fonts.addAll(fontDocument.fonts);
     }
 
     return DocxBuiltDocument(
