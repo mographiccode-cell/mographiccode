@@ -198,6 +198,7 @@ void main() {
 
     expect(pdfBytes.length, greaterThan(1000));
     expect(ascii.decode(pdfBytes.sublist(0, 4)), '%PDF');
+    await File('arabic_test_output.pdf').writeAsBytes(pdfBytes, flush: true);
 
     final parsed = await PdfReader.loadFromBytes(pdfBytes);
     expect(parsed.pageCount, greaterThanOrEqualTo(2));
