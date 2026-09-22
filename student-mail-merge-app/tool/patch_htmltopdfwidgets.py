@@ -24,6 +24,12 @@ text = path.read_text(encoding="utf-8")
 original = text
 
 text = text.replace(
+    "final cellContent = _buildCellRichText(allCellSpans[i], isHeader);",
+    "final cellContent = _buildCellRichText(\\n"
+    "            allCellSpans[i], isHeader, child.style.textDirection);",
+)
+
+text = text.replace(
     "final cellContent = _buildCellRichText(chunks[chunkIdx], isHeader);",
     "final cellContent = _buildCellRichText(\n"
     "              chunks[chunkIdx], isHeader, child.style.textDirection);",
