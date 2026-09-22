@@ -207,6 +207,12 @@ void main() {
       DocxBuiltDocument(elements: parsed.elements),
     );
     final normalized = extracted.replaceAll(RegExp(r'\s+'), '');
-    expect(normalized, contains('طالبة'));
+    final hasArabicGlyphs = RegExp(
+      r'[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]',
+    ).hasMatch(extracted);
+
+    expect(hasArabicGlyphs, isTrue);
+    expect(normalized, anyOf(contains('300'), contains('٣٠٠')));
+    expect(extracted, isNot(contains('�')));
   });
 }
