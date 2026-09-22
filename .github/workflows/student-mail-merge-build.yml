@@ -35,6 +35,9 @@ jobs:
         working-directory: buildapp
         run: flutter pub get
 
+      - name: Patch Arabic RTL PDF renderer
+        run: python student-mail-merge-app/tool/patch_htmltopdfwidgets.py
+
       - name: Analyze
         working-directory: buildapp
         run: flutter analyze --no-fatal-warnings
@@ -91,6 +94,9 @@ jobs:
       - name: Dependencies
         working-directory: buildapp
         run: flutter pub get
+
+      - name: Patch Arabic RTL PDF renderer
+        run: python student-mail-merge-app/tool/patch_htmltopdfwidgets.py
 
       - name: Analyze
         working-directory: buildapp
