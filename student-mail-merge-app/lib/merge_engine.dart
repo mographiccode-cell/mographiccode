@@ -7,7 +7,6 @@ import 'package:docx_creator/docx_creator.dart';
 import 'package:excel_plus/excel_plus.dart';
 import 'package:htmltopdfwidgets/htmltopdfwidgets.dart';
 import 'package:path/path.dart' as p;
-import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:xml/xml.dart';
 
@@ -1277,11 +1276,4 @@ class _LabeledMatch {
     required this.start,
     required this.valueStart,
   });
-}
-
-extension _FirstOrNullExtension<T> on Iterable<T> {
-  T? get firstOrNull {
-    final iterator = this.iterator;
-    return iterator.moveNext() ? iterator.current : null;
-  }
 }
