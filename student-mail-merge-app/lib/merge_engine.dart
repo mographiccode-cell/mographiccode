@@ -597,6 +597,18 @@ class MergeEngine {
 
       final pageDocument = await DocxReader.loadFromBytes(pageDocx);
       var html = HtmlExporter().export(pageDocument);
+
+      // Word frequently splits Arabic paragraphs into many inline runs.
+      // Rendering bidi per-run can scramble the visual word order, so flatten
+      // text-only formatting runs while preserving tables, cells and images.
+      html = html.replaceAll(
+        RegExp(
+          r'</?(?:span|strong|b|em|i|u)(?:\\s[^>]*)?>',
+          caseSensitive: false,
+        ),
+        '',
+      );
+
       html = html.replaceFirst(
         '</head>',
         '<style>'
