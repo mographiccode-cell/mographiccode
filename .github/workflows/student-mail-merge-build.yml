@@ -43,6 +43,13 @@ jobs:
         working-directory: buildapp
         run: flutter test --reporter expanded
 
+      - name: Upload Arabic PDF validation sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arabic-PDF-Validation
+          path: buildapp/arabic_test_output.pdf
+          if-no-files-found: error
+
       - name: Build release APK
         working-directory: buildapp
         run: flutter build apk --release
