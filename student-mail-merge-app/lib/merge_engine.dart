@@ -600,6 +600,7 @@ class MergeEngine {
       html = html.replaceFirst(
         '</head>',
         '<style>'
+        '*{font-family:ArabicFallback!important;}'
         'html,body{direction:rtl!important;text-align:right!important;'
         'margin:0!important;padding:0!important;max-width:none!important;}'
         'table{direction:rtl!important;margin:0!important;width:100%!important;'
@@ -616,6 +617,9 @@ class MergeEngine {
         html,
         useNewEngine: true,
         fontFallback: fallbackFont == null ? const [] : [fallbackFont],
+        fontResolver: fallbackFont == null
+            ? null
+            : (_, __, ___) => fallbackFont,
         defaultFontFamily: 'ArabicFallback',
         defaultFontSize: 10.0,
       );
