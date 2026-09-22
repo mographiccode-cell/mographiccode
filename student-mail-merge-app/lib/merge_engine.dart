@@ -5,7 +5,10 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:docx_creator/docx_creator.dart';
 import 'package:excel_plus/excel_plus.dart';
+import 'package:htmltopdfwidgets/htmltopdfwidgets.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:xml/xml.dart';
 
 class MergeRecord {
@@ -36,6 +39,28 @@ class MergeRecord {
     if (_seatAliases.contains(normalized)) return seat;
 
     return '';
+  }
+
+  MergeRecord withSeat(String newSeat) {
+    final updatedRaw = Map<String, String>.from(raw);
+
+    for (final key in updatedRaw.keys.toList()) {
+      if (_seatAliases.contains(normalize(key))) {
+        updatedRaw[key] = newSeat;
+      }
+    }
+
+    updatedRaw['رقم الجلوس'] = newSeat;
+    updatedRaw['ارقام الجلوس'] = newSeat;
+    updatedRaw['أرقام الجلوس'] = newSeat;
+
+    return MergeRecord(
+      name: name,
+      grade: grade,
+      committee: committee,
+      seat: newSeat,
+      raw: updatedRaw,
+    );
   }
 
   static String normalize(String input) => input
@@ -237,22 +262,25 @@ class MergeEngine {
         if (inferredCommittee != gradeCol) committeeCol = inferredCommittee;
       }
 
-      if (seatCol == null || nameCol == null) continue;
+      if (nameCol == null) continue;
 
       for (var r = scanStart; r < rows.length; r++) {
         final row = rows[r];
 
-        final seatText = _textAt(row, seatCol);
+        final seatText = seatCol == null ? '' : _textAt(row, seatCol);
         final nameText = _textAt(row, nameCol);
 
-        if (!_looksNumeric(seatText) || !_looksLikeName(nameText)) continue;
+        if (!_looksLikeName(nameText)) continue;
+        if (seatText.isNotEmpty && !_looksNumeric(seatText)) continue;
 
         final gradeText =
             gradeCol == null ? '' : _textAt(row, gradeCol).trim();
         final committeeText =
             committeeCol == null ? '' : _textAt(row, committeeCol).trim();
 
-        final seat = _normalizeNumber(seatText);
+        final seat = seatText.isNotEmpty
+            ? _normalizeNumber(seatText)
+            : (allRecords.length + 1).toString();
         final grade = gradeText.isNotEmpty ? gradeText : gradeHint;
         final committee = committeeText;
 
@@ -300,6 +328,21 @@ class MergeEngine {
       records: allRecords,
       sheetCount: excel.tables.length,
       detectedFields: fields,
+    );
+  }
+
+  List<MergeRecord> renumberSeats(
+    List<MergeRecord> records,
+    int startNumber,
+  ) {
+    if (startNumber < 1) {
+      throw Exception('رقم بداية الجلوس يجب أن يكون 1 أو أكبر.');
+    }
+
+    return List<MergeRecord>.generate(
+      records.length,
+      (index) => records[index].withSeat((startNumber + index).toString()),
+      growable: false,
     );
   }
 
@@ -518,6 +561,97 @@ class MergeEngine {
     }
 
     try {
+      return await _buildArabicSafeHtmlPdf(
+        templateBytes: templateBytes,
+        records: records,
+      );
+    } catch (_) {
+      return _buildLegacyDocxPdf(
+        templateBytes: templateBytes,
+        records: records,
+      );
+    }
+  }
+
+  Future<Uint8List> _buildArabicSafeHtmlPdf({
+    required Uint8List templateBytes,
+    required List<MergeRecord> records,
+  }) async {
+    final templateInfo = inspectWord(templateBytes);
+    final cardsPerPage = templateInfo.cardsPerPage;
+    final fontBytes = await _loadSystemArabicFont();
+    final fallbackFont = fontBytes == null
+        ? null
+        : pw.Font.ttf(ByteData.sublistView(fontBytes));
+
+    final pdf = pw.Document();
+
+    for (var offset = 0; offset < records.length; offset += cardsPerPage) {
+      final end = offset + cardsPerPage < records.length
+          ? offset + cardsPerPage
+          : records.length;
+
+      final pageDocx = mergeDocx(
+        templateBytes: templateBytes,
+        records: records.sublist(offset, end),
+      );
+
+      final pageDocument = await DocxReader.loadFromBytes(pageDocx);
+      var html = HtmlExporter().export(pageDocument);
+      html = html.replaceFirst(
+        '</head>',
+        '<style>'
+        'html,body{direction:rtl!important;text-align:right!important;'
+        'margin:0!important;padding:0!important;max-width:none!important;}'
+        'table{direction:rtl!important;margin:0!important;width:100%!important;'
+        'border-collapse:collapse!important;}'
+        'td,th,p,span,div{direction:rtl!important;}'
+        '</style></head>',
+      );
+      html = html.replaceFirst(
+        '<body>',
+        '<body dir="rtl" style="direction:rtl;text-align:right;">',
+      );
+
+      final widgets = await HTMLToPdf().convert(
+        html,
+        useNewEngine: true,
+        fontFallback: fallbackFont == null ? const [] : [fallbackFont],
+        defaultFontFamily: 'ArabicFallback',
+        defaultFontSize: 10.0,
+      );
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(10),
+          build: (_) => pw.FittedBox(
+            fit: pw.BoxFit.contain,
+            alignment: pw.Alignment.topCenter,
+            child: pw.Container(
+              width: PdfPageFormat.a4.width - 20,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: widgets,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final bytes = await pdf.save();
+    if (bytes.isEmpty) {
+      throw Exception('تم إنشاء PDF فارغ.');
+    }
+    return Uint8List.fromList(bytes);
+  }
+
+  Future<Uint8List> _buildLegacyDocxPdf({
+    required Uint8List templateBytes,
+    required List<MergeRecord> records,
+  }) async {
+    try {
       final templateInfo = inspectWord(templateBytes);
       final cardsPerPage = templateInfo.cardsPerPage;
       final combinedElements = <DocxNode>[];
@@ -637,9 +771,11 @@ class MergeEngine {
     final candidates = <String>[
       if (Platform.isAndroid) ...[
         '/system/fonts/NotoNaskhArabic-Regular.ttf',
+        '/system/fonts/NotoNaskhArabic-VF.ttf',
         '/system/fonts/NotoSansArabic-Regular.ttf',
         '/system/fonts/NotoSansArabicUI-Regular.ttf',
         '/system/fonts/NotoSansArabic-VF.ttf',
+        '/system/fonts/NotoSansArabic.ttf',
       ],
       if (Platform.isWindows) ...[
         r'C:\Windows\Fonts\arial.ttf',
@@ -677,10 +813,10 @@ class MergeEngine {
       final escapedPdf = pdfPath.replaceAll("'", "''");
       final script =
           r"$word = New-Object -ComObject Word.Application; " +
-          r"$word.Visible = $false; " +
+          r"$word.Visible = $false; $word.DisplayAlerts = 0; " +
           "\$doc = \$word.Documents.Open('$escapedDocx'); " +
-          "\$doc.SaveAs([ref]'$escapedPdf', [ref]17); " +
-          r"$doc.Close(); $word.Quit();";
+          "\$doc.ExportAsFixedFormat('$escapedPdf', 17); " +
+          r"$doc.Close(0); $word.Quit();";
 
       final result = await Process.run(
         'powershell.exe',

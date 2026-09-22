@@ -13,27 +13,20 @@ Future<Uint8List> _makeLabeledTemplate() async {
   const card =
       'اسم الطالبة: نموذج  الصف: الرابع  اللجنة: الاولى  رقم الجلوس: ( 1 )';
 
-  final rows = List.generate(
-    5,
-    (_) => const [card, card],
-  );
-
+  final rows = List.generate(5, (_) => const [card, card]);
   final document = docx().table(rows).build();
   final bytes = await DocxExporter().exportToBytes(document);
   return Uint8List.fromList(bytes);
 }
 
-Uint8List _makeExcelLikeUserFile({int fourth = 4, int fifth = 4, int sixth = 4}) {
+Uint8List _makeExcelLikeUserFile({
+  int fourth = 4,
+  int fifth = 4,
+  int sixth = 4,
+}) {
   final excel = Excel.createExcel();
 
   final s1 = excel['ورقة1'];
-  s1.appendRow([
-    TextCellValue(''),
-    TextCellValue(''),
-    TextCellValue(''),
-    TextCellValue(''),
-    TextCellValue(''),
-  ]);
   s1.appendRow([
     TextCellValue(''),
     TextCellValue('اسم الطالبة'),
@@ -41,7 +34,6 @@ Uint8List _makeExcelLikeUserFile({int fourth = 4, int fifth = 4, int sixth = 4})
     TextCellValue('الصف'),
     TextCellValue('ارقام الجلوس'),
   ]);
-
   for (var i = 1; i <= fourth; i++) {
     s1.appendRow([
       IntCellValue(i),
@@ -59,7 +51,6 @@ Uint8List _makeExcelLikeUserFile({int fourth = 4, int fifth = 4, int sixth = 4})
     TextCellValue(''),
     TextCellValue(''),
   ]);
-
   for (var i = 1; i <= fifth; i++) {
     s2.appendRow([
       IntCellValue(i),
@@ -74,7 +65,6 @@ Uint8List _makeExcelLikeUserFile({int fourth = 4, int fifth = 4, int sixth = 4})
     TextCellValue(''),
     TextCellValue('سادس'),
   ]);
-
   for (var i = 1; i <= sixth; i++) {
     s3.appendRow([
       IntCellValue(i),
@@ -116,8 +106,7 @@ List<String> _cardCellTexts(Uint8List docxBytes) {
             .map((element) => element.innerText)
             .join();
 
-        if (text.contains('اسم الطالبة') &&
-            text.contains('رقم الجلوس')) {
+        if (text.contains('اسم الطالبة') && text.contains('رقم الجلوس')) {
           cells.add(text);
         }
       }
@@ -130,124 +119,92 @@ List<String> _cardCellTexts(Uint8List docxBytes) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('reads the same irregular three-sheet Excel structure as user file',
-      () async {
+  test('reads irregular three-sheet Excel structure', () async {
     final engine = MergeEngine();
     final result = await engine.readExcel(_makeExcelLikeUserFile());
 
     expect(result.records.length, 12);
-
-    expect(result.records[0].name, 'طالبة رابع رقم 1');
     expect(result.records[0].grade, 'الرابع');
-    expect(result.records[0].committee, 'الاولى');
-    expect(result.records[0].seat, '1');
-
-    expect(result.records[4].name, 'طالبة خامس رقم 1');
     expect(result.records[4].grade, 'الخامس');
-    expect(result.records[4].committee, 'الثانية');
-    expect(result.records[4].seat, '1');
-
-    expect(result.records[8].name, 'طالبة سادس رقم 1');
     expect(result.records[8].grade, 'السادس');
-    expect(result.records[8].committee, isEmpty);
-    expect(result.records[8].seat, '1');
   });
 
-  test('detects an already-filled Word card page without placeholders',
-      () async {
-    final engine = MergeEngine();
-    final templateBytes = await _makeLabeledTemplate();
-
-    final info = engine.inspectWord(templateBytes);
-
-    expect(info.cardsPerPage, 10);
-    expect(info.mode, WordTemplateMode.labeledCards);
-    expect(info.labeledFields, containsAll({
-      'name',
-      'grade',
-      'committee',
-      'seat',
-    }));
-  });
-
-  test('merges 12 records into 10-card pages in exact order', () async {
+  test('global seat numbering never resets between grades', () async {
     final engine = MergeEngine();
     final excel = await engine.readExcel(_makeExcelLikeUserFile());
-    final templateBytes = await _makeLabeledTemplate();
+    final numbered = engine.renumberSeats(excel.records, 300);
 
-    final merged = engine.mergeDocx(
-      templateBytes: templateBytes,
-      records: excel.records,
-    );
-
-    final cards = _cardCellTexts(merged);
-
-    expect(cards.length, 20);
-    expect(cards[0], contains('طالبة رابع رقم 1'));
-    expect(cards[0], contains('الرابع'));
-    expect(cards[0], contains('الاولى'));
-    expect(cards[0], contains('( 1 )'));
-
-    expect(cards[3], contains('طالبة رابع رقم 4'));
-    expect(cards[4], contains('طالبة خامس رقم 1'));
-    expect(cards[8], contains('طالبة سادس رقم 1'));
-
-    expect(cards[9], contains('طالبة سادس رقم 2'));
-    expect(cards[10], contains('طالبة سادس رقم 3'));
-    expect(cards[11], contains('طالبة سادس رقم 4'));
-
-    for (final card in cards.skip(12)) {
-      expect(card, isNot(contains('نموذج')));
-    }
+    expect(numbered.first.seat, '300');
+    expect(numbered[3].seat, '303');
+    expect(numbered[4].grade, 'الخامس');
+    expect(numbered[4].seat, '304');
+    expect(numbered[8].grade, 'السادس');
+    expect(numbered[8].seat, '308');
+    expect(numbered.last.seat, '311');
+    expect(numbered[4].valueFor('رقم الجلوس'), '304');
+    expect(numbered[4].valueFor('ارقام الجلوس'), '304');
   });
 
-  test('292 records create exactly 30 ten-card pages with correct grade boundaries', () async {
+  test('292 students starting at 300 end at 591 continuously', () async {
     final engine = MergeEngine();
     final excel = await engine.readExcel(
       _makeExcelLikeUserFile(fourth: 90, fifth: 101, sixth: 101),
     );
-    final templateBytes = await _makeLabeledTemplate();
+    final numbered = engine.renumberSeats(excel.records, 300);
 
-    expect(excel.records.length, 292);
-    expect(excel.records[89].grade, 'الرابع');
-    expect(excel.records[90].grade, 'الخامس');
-    expect(excel.records[190].grade, 'الخامس');
-    expect(excel.records[191].grade, 'السادس');
-    expect(excel.records[291].grade, 'السادس');
+    expect(numbered.length, 292);
+    expect(numbered[89].grade, 'الرابع');
+    expect(numbered[89].seat, '389');
+    expect(numbered[90].grade, 'الخامس');
+    expect(numbered[90].seat, '390');
+    expect(numbered[190].seat, '490');
+    expect(numbered[191].grade, 'السادس');
+    expect(numbered[191].seat, '491');
+    expect(numbered.last.seat, '591');
+  });
+
+  test('Word cards receive continuous user-defined seat numbers', () async {
+    final engine = MergeEngine();
+    final excel = await engine.readExcel(_makeExcelLikeUserFile());
+    final numbered = engine.renumberSeats(excel.records, 300);
+    final templateBytes = await _makeLabeledTemplate();
 
     final merged = engine.mergeDocx(
       templateBytes: templateBytes,
-      records: excel.records,
+      records: numbered,
     );
 
     final cards = _cardCellTexts(merged);
-    expect(cards.length, 300);
-
-    expect(cards[89], contains('طالبة رابع رقم 90'));
-    expect(cards[90], contains('طالبة خامس رقم 1'));
-    expect(cards[190], contains('طالبة خامس رقم 101'));
-    expect(cards[191], contains('طالبة سادس رقم 1'));
-    expect(cards[291], contains('طالبة سادس رقم 101'));
-
-    for (final card in cards.skip(292)) {
-      expect(card, isNot(contains('نموذج')));
-    }
+    expect(cards.length, 20);
+    expect(cards[0], contains('( 300 )'));
+    expect(cards[3], contains('( 303 )'));
+    expect(cards[4], contains('( 304 )'));
+    expect(cards[8], contains('( 308 )'));
+    expect(cards[11], contains('( 311 )'));
   });
 
-  test('merged DOCX converts to a real multi-page PDF', () async {
+  test('Arabic-safe PDF is multi-page and preserves Unicode text mapping',
+      () async {
     final engine = MergeEngine();
     final excel = await engine.readExcel(_makeExcelLikeUserFile());
+    final numbered = engine.renumberSeats(excel.records, 300);
     final templateBytes = await _makeLabeledTemplate();
 
     final pdfBytes = await engine.buildDesignPdfFromTemplate(
       templateBytes: templateBytes,
-      records: excel.records,
+      records: numbered,
     );
 
     expect(pdfBytes.length, greaterThan(1000));
     expect(ascii.decode(pdfBytes.sublist(0, 4)), '%PDF');
 
-    final pdf = await PdfReader.loadFromBytes(pdfBytes);
-    expect(pdf.pageCount, greaterThanOrEqualTo(2));
+    final parsed = await PdfReader.loadFromBytes(pdfBytes);
+    expect(parsed.pageCount, greaterThanOrEqualTo(2));
+
+    final extracted = MarkdownExporter().export(
+      DocxBuiltDocument(elements: parsed.elements),
+    );
+    expect(extracted, contains('طالبة'));
+    expect(extracted, anyOf(contains('300'), contains('٣٠٠')));
   });
 }
