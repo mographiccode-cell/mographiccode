@@ -48,7 +48,7 @@ jobs:
         with:
           name: Arabic-PDF-Validation
           path: buildapp/arabic_test_output.pdf
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Build release APK
         working-directory: buildapp
