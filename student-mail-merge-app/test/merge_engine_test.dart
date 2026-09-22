@@ -204,7 +204,7 @@ void main() {
     final extracted = MarkdownExporter().export(
       DocxBuiltDocument(elements: parsed.elements),
     );
-    final normalized = extracted.replaceAll(RegExp(r'\\s+'), '');
+    final normalized = extracted.replaceAll(RegExp(r'\s+'), '');
     expect(normalized, contains('طالبة'));
   });
 }
