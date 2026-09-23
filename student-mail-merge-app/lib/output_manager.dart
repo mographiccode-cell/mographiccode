@@ -29,7 +29,7 @@ class OutputManager {
     await for (final entity in dir.list(followLinks: false)) {
       if (entity is! File) continue;
       final ext = p.extension(entity.path).toLowerCase();
-      if (ext == '.pdf' || ext == '.docx') {
+      if (ext == '.docx') {
         files.add(entity);
       }
     }
