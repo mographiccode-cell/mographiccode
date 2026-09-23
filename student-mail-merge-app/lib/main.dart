@@ -78,7 +78,8 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _seatStartController =
       TextEditingController(text: '1');
   final TextEditingController _committeeCountController =
-      TextEditingController(text: '1');
+      TextEditingController();
+  bool _autoDistributeCommittees = false;
 
   PlatformFile? _excelFile;
   PlatformFile? _wordFile;
@@ -91,7 +92,7 @@ class _HomePageState extends State<HomePage> {
   bool _busy = false;
   String _stage = '';
   String _status =
-      'اختر ملف Excel ثم Word وحدد بداية رقم الجلوس وعدد اللجان.';
+      'اختر ملف Excel ثم Word وحدد بداية رقم الجلوس. توزيع اللجان اختياري.';
 
   @override
   void dispose() {
@@ -121,13 +122,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool get _committeeCountValid {
+    if (!_autoDistributeCommittees) return true;
+
     final count = _committeeCount;
     return count != null &&
         _records.isNotEmpty &&
-        count <= _records.length;
+        count <= _records.length &&
+        count <= 999;
   }
 
   List<int> get _committeeSizes {
+    if (!_autoDistributeCommittees) return const [];
+
     final count = _committeeCount;
     if (count == null || _records.isEmpty) return const [];
     return _engine.committeeSizes(_records.length, count);
@@ -137,16 +143,27 @@ class _HomePageState extends State<HomePage> {
     final excel = _excel;
     final template = _template;
     if (excel == null || template == null) return const [];
-    return _engine.missingFields(excel, template);
+    return _engine.missingFields(
+      excel,
+      template,
+      committeeWillBeGenerated: _autoDistributeCommittees,
+    );
   }
 
   List<MergeRecord> _preparedRecords() {
     final start = _seatStart;
-    final committees = _committeeCount;
 
     if (start == null) {
       throw Exception('أدخل رقم بداية جلوس صحيحًا، مثال: 300.');
     }
+
+    final numbered = _engine.renumberSeats(_records, start);
+
+    if (!_autoDistributeCommittees) {
+      return numbered;
+    }
+
+    final committees = _committeeCount;
     if (committees == null) {
       throw Exception('أدخل عدد لجان صحيحًا.');
     }
@@ -155,12 +172,20 @@ class _HomePageState extends State<HomePage> {
         'عدد اللجان لا يمكن أن يكون أكبر من عدد الطلاب (${_records.length}).',
       );
     }
+    if (committees > 999) {
+      throw Exception(
+        'التسمية العربية التلقائية للجان تدعم حتى 999 لجنة.',
+      );
+    }
 
-    final numbered = _engine.renumberSeats(_records, start);
     return _engine.distributeCommittees(numbered, committees);
   }
 
   String _committeePreviewText() {
+    if (!_autoDistributeCommittees) {
+      return 'اختياري: عند إيقافه سيحتفظ التطبيق بقيمة اللجنة الموجودة في Excel كما هي.';
+    }
+
     final count = _committeeCount;
 
     if (_records.isEmpty) {
@@ -171,6 +196,9 @@ class _HomePageState extends State<HomePage> {
     }
     if (count > _records.length) {
       return 'عدد اللجان أكبر من عدد الطلاب.';
+    }
+    if (count > 999) {
+      return 'يدعم التوزيع والتسمية العربية حتى 999 لجنة.';
     }
 
     final sizes = _committeeSizes;
@@ -259,9 +287,9 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    if (!_committeeCountValid) {
+    if (_autoDistributeCommittees && !_committeeCountValid) {
       _showError(
-        'أدخل عدد لجان من 1 إلى ${_records.length}.',
+        'أدخل عدد لجان من 1 إلى ${_records.length} وبحد أقصى 999.',
       );
       return;
     }
@@ -275,11 +303,14 @@ class _HomePageState extends State<HomePage> {
     final records = _preparedRecords();
     final startSeat = records.first.seat;
     final endSeat = records.last.seat;
-    final committeeCount = _committeeCount!;
+    final committeeCount =
+        _autoDistributeCommittees ? _committeeCount : null;
 
     _setBusy(
       'دمج Word',
-      'جارٍ ترقيم الطلاب من $startSeat إلى $endSeat وتوزيعهم بالتساوي على $committeeCount لجان...',
+      _autoDistributeCommittees
+          ? 'جارٍ ترقيم الطلاب من $startSeat إلى $endSeat وتوزيعهم بالتساوي على $committeeCount لجان...'
+          : 'جارٍ ترقيم الطلاب من $startSeat إلى $endSeat ودمج بيانات Excel مع الاحتفاظ باللجان الأصلية...',
     );
 
     try {
@@ -290,8 +321,11 @@ class _HomePageState extends State<HomePage> {
 
       final dir = await OutputManager.getOutputDirectory();
       final stamp = OutputManager.timestampName();
+      final committeePart = _autoDistributeCommittees
+          ? '_committees_${committeeCount}'
+          : '_original_committees';
       final fileName =
-          'student_cards_${startSeat}_${endSeat}_committees_${committeeCount}_$stamp.docx';
+          'student_cards_${startSeat}_${endSeat}$committeePart_$stamp.docx';
       final docxPath = p.join(dir.path, fileName);
 
       await File(docxPath).writeAsBytes(mergedDocx, flush: true);
@@ -302,8 +336,9 @@ class _HomePageState extends State<HomePage> {
 
       setState(() {
         _stage = 'اكتمل';
-        _status =
-            'تم إنشاء Word: ${records.length} طالب، أرقام الجلوس $startSeat–$endSeat، $committeeCount لجان، $pageCount صفحة.';
+        _status = _autoDistributeCommittees
+            ? 'تم إنشاء Word: ${records.length} طالب، أرقام الجلوس $startSeat–$endSeat، $committeeCount لجان موزعة بالتساوي، $pageCount صفحة.'
+            : 'تم إنشاء Word: ${records.length} طالب، أرقام الجلوس $startSeat–$endSeat، مع الاحتفاظ باللجان الأصلية، $pageCount صفحة.';
       });
 
       await _showResult(
@@ -312,6 +347,7 @@ class _HomePageState extends State<HomePage> {
         endSeat: endSeat,
         committeeCount: committeeCount,
         committeeSizes: _committeeSizes,
+        autoDistributed: _autoDistributeCommittees,
       );
     } catch (error) {
       _showError(error);
@@ -348,11 +384,16 @@ class _HomePageState extends State<HomePage> {
     required String docxPath,
     required String startSeat,
     required String endSeat,
-    required int committeeCount,
+    required int? committeeCount,
     required List<int> committeeSizes,
+    required bool autoDistributed,
   }) async {
-    final minSize = committeeSizes.reduce((a, b) => a < b ? a : b);
-    final maxSize = committeeSizes.reduce((a, b) => a > b ? a : b);
+    final minSize = committeeSizes.isEmpty
+        ? null
+        : committeeSizes.reduce((a, b) => a < b ? a : b);
+    final maxSize = committeeSizes.isEmpty
+        ? null
+        : committeeSizes.reduce((a, b) => a > b ? a : b);
 
     await showModalBottomSheet(
       context: context,
@@ -389,23 +430,28 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'أرقام الجلوس: $startSeat–$endSeat\n'
-                    'عدد اللجان: $committeeCount\n'
-                    'عدد الطلاب في اللجنة: من $minSize إلى $maxSize فقط.',
+                    autoDistributed
+                        ? 'أرقام الجلوس: $startSeat–$endSeat\n'
+                            'عدد اللجان: $committeeCount\n'
+                            'عدد الطلاب في اللجنة: من $minSize إلى $maxSize فقط.'
+                        : 'أرقام الجلوس: $startSeat–$endSeat\n'
+                            'تم الاحتفاظ بقيم اللجان الأصلية من Excel.',
                   ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
-                    children: List.generate(
-                      committeeSizes.length,
-                      (index) => Chip(
-                        label: Text(
-                          'لجنة ${index + 1}: ${committeeSizes[index]}',
+                  if (autoDistributed && committeeSizes.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: List.generate(
+                        committeeSizes.length,
+                        (index) => Chip(
+                          label: Text(
+                            '${_engine.committeeName(index + 1)}: ${committeeSizes[index]}',
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 18),
                   FilledButton.icon(
                     onPressed: () => OpenFilex.open(docxPath),
@@ -519,7 +565,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       SizedBox(height: 14),
                       Text(
-                        'Excel + Word → توزيع لجان ودمج',
+                        'Excel + Word → دمج بطاقات مرن',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 22,
@@ -528,7 +574,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       SizedBox(height: 7),
                       Text(
-                        'حدد بداية رقم الجلوس وعدد اللجان، وسيتم توزيع جميع الطلاب بالتساوي ثم كتابة البيانات داخل تصميم Word.',
+                        'حدد بداية رقم الجلوس، ويمكنك اختياريًا توزيع الطلاب على لجان متساوية بأسماء عربية ثم دمجهم داخل تصميم Word.',
                         style: TextStyle(
                           color: Color(0xFFE7EEFA),
                           height: 1.5,
@@ -576,18 +622,86 @@ class _HomePageState extends State<HomePage> {
                   error: start == null,
                 ),
                 const SizedBox(height: 12),
-                _NumberSettingCard(
-                  number: '4',
-                  title: 'عدد اللجان',
-                  icon: Icons.groups_2_outlined,
-                  controller: _committeeCountController,
-                  hint: 'مثال: 10',
-                  enabled: !_busy,
-                  onChanged: (_) => setState(() {}),
-                  footer: _committeePreviewText(),
-                  error: committeeCount == null ||
-                      (_records.isNotEmpty &&
-                          committeeCount > _records.length),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(17),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const CircleAvatar(
+                              radius: 17,
+                              child: Text('4'),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'توزيع اللجان تلقائيًا',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  SizedBox(height: 3),
+                                  Text(
+                                    'اختياري',
+                                    style: TextStyle(
+                                      color: Color(0xFF667389),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: _autoDistributeCommittees,
+                              onChanged: _busy
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _autoDistributeCommittees = value;
+                                      });
+                                    },
+                            ),
+                          ],
+                        ),
+                        if (_autoDistributeCommittees) ...[
+                          const SizedBox(height: 13),
+                          TextField(
+                            controller: _committeeCountController,
+                            enabled: !_busy,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            onChanged: (_) => setState(() {}),
+                            decoration: const InputDecoration(
+                              labelText: 'عدد اللجان',
+                              hintText: 'مثال: 10',
+                              prefixIcon: Icon(
+                                Icons.groups_2_outlined,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        Text(
+                          _committeePreviewText(),
+                          style: TextStyle(
+                            color: _autoDistributeCommittees &&
+                                    !_committeeCountValid
+                                ? Theme.of(context).colorScheme.error
+                                : const Color(0xFF506079),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 if (_committeeSizes.isNotEmpty) ...[
                   const SizedBox(height: 10),
@@ -605,7 +719,7 @@ class _HomePageState extends State<HomePage> {
                               size: 17,
                             ),
                             label: Text(
-                              'لجنة ${index + 1}: ${_committeeSizes[index]}',
+                              '${_engine.committeeName(index + 1)}: ${_committeeSizes[index]}',
                             ),
                           ),
                         ),
@@ -696,7 +810,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                     icon: const Icon(Icons.merge_type_rounded),
                     label: const Text(
-                      'توزيع اللجان ودمج ملف Word',
+                      _autoDistributeCommittees
+                          ? 'توزيع اللجان ودمج ملف Word'
+                          : 'دمج ملف Word',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
