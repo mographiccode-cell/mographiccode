@@ -1,5 +1,5 @@
 #define MyAppName "Student Mail Merge"
-#define MyAppVersion "1.2.1"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "M. Mahmoud Dghbas"
 #define MyAppExeName "student_mail_merge.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\..\installer-output
-OutputBaseFilename=Student-Mail-Merge-Setup
+OutputBaseFilename=Student-Mail-Merge-Installer-v1.3.0
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -28,6 +28,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
+
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\*"
+Type: files; Name: "{autodesktop}\student_mail_merge.exe"
+Type: files; Name: "{autodesktop}\student_mail_merge-1.exe"
+Type: files; Name: "{autodesktop}\student_mail_merge-1.2.1.exe"
 
 [Files]
 Source: "..\..\buildapp\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
