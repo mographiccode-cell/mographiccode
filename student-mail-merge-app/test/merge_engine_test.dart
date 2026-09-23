@@ -36,7 +36,7 @@ Uint8List _makeExcel({
   for (var i = 1; i <= fourth; i++) {
     s1.appendRow([
       TextCellValue('طالبة رابع $i'),
-      TextCellValue('الاولى'),
+      TextCellValue('الأولى'),
       TextCellValue('الرابع'),
       IntCellValue(i),
     ]);
@@ -118,7 +118,37 @@ void main() {
     expect(numbered.last.seat, '311');
   });
 
-  test('12 students are distributed evenly over 5 committees', () async {
+  test('committee distribution can remain disabled and preserve Excel values',
+      () async {
+    final engine = MergeEngine();
+    final excel = await engine.readExcel(_makeExcel());
+    final numberedOnly = engine.renumberSeats(excel.records, 300);
+
+    expect(numberedOnly[0].committee, 'الأولى');
+    expect(numberedOnly[3].committee, 'الأولى');
+    expect(numberedOnly[4].committee, 'الثانية');
+    expect(numberedOnly[7].committee, 'الثانية');
+    expect(numberedOnly[8].committee, isEmpty);
+  });
+
+  test('Arabic feminine committee names are generated correctly', () {
+    final engine = MergeEngine();
+
+    expect(engine.committeeName(1), 'الأولى');
+    expect(engine.committeeName(2), 'الثانية');
+    expect(engine.committeeName(10), 'العاشرة');
+    expect(engine.committeeName(11), 'الحادية عشرة');
+    expect(engine.committeeName(12), 'الثانية عشرة');
+    expect(engine.committeeName(20), 'العشرون');
+    expect(engine.committeeName(21), 'الأولى والعشرون');
+    expect(engine.committeeName(32), 'الثانية والثلاثون');
+    expect(engine.committeeName(99), 'التاسعة والتسعون');
+    expect(engine.committeeName(100), 'المائة');
+    expect(engine.committeeName(121), 'الأولى والعشرون بعد المائة');
+  });
+
+  test('12 students are distributed evenly over 5 Arabic-named committees',
+      () async {
     final engine = MergeEngine();
     final excel = await engine.readExcel(_makeExcel());
     final numbered = engine.renumberSeats(excel.records, 300);
@@ -127,23 +157,23 @@ void main() {
     expect(engine.committeeSizes(12, 5), [3, 3, 2, 2, 2]);
     expect(distributed.length, 12);
 
-    expect(distributed[0].committee, '1');
-    expect(distributed[2].committee, '1');
-    expect(distributed[3].committee, '2');
-    expect(distributed[5].committee, '2');
-    expect(distributed[6].committee, '3');
-    expect(distributed[7].committee, '3');
-    expect(distributed[8].committee, '4');
-    expect(distributed[9].committee, '4');
-    expect(distributed[10].committee, '5');
-    expect(distributed[11].committee, '5');
+    expect(distributed[0].committee, 'الأولى');
+    expect(distributed[2].committee, 'الأولى');
+    expect(distributed[3].committee, 'الثانية');
+    expect(distributed[5].committee, 'الثانية');
+    expect(distributed[6].committee, 'الثالثة');
+    expect(distributed[7].committee, 'الثالثة');
+    expect(distributed[8].committee, 'الرابعة');
+    expect(distributed[9].committee, 'الرابعة');
+    expect(distributed[10].committee, 'الخامسة');
+    expect(distributed[11].committee, 'الخامسة');
 
     expect(distributed[3].seat, '303');
-    expect(distributed[3].valueFor('اللجنة'), '2');
-    expect(distributed[3].valueFor('رقم اللجنة'), '2');
+    expect(distributed[3].valueFor('اللجنة'), 'الثانية');
+    expect(distributed[3].valueFor('رقم اللجنة'), 'الثانية');
   });
 
-  test('Word merge writes redistributed committee numbers into cards', () async {
+  test('Word merge writes Arabic committee names into cards', () async {
     final engine = MergeEngine();
     final excel = await engine.readExcel(_makeExcel());
     final numbered = engine.renumberSeats(excel.records, 300);
@@ -161,15 +191,15 @@ void main() {
     expect(cards.length, 20);
 
     expect(cards[0], contains('طالبة رابع 1'));
-    expect(cards[0], contains('اللجنة: 1'));
+    expect(cards[0], contains('اللجنة: الأولى'));
     expect(cards[0], contains('( 300 )'));
 
-    expect(cards[3], contains('اللجنة: 2'));
+    expect(cards[3], contains('اللجنة: الثانية'));
     expect(cards[3], contains('( 303 )'));
 
-    expect(cards[6], contains('اللجنة: 3'));
-    expect(cards[8], contains('اللجنة: 4'));
-    expect(cards[10], contains('اللجنة: 5'));
+    expect(cards[6], contains('اللجنة: الثالثة'));
+    expect(cards[8], contains('اللجنة: الرابعة'));
+    expect(cards[10], contains('اللجنة: الخامسة'));
     expect(cards[11], contains('( 311 )'));
   });
 
@@ -189,15 +219,18 @@ void main() {
     expect(distributed.last.seat, '591');
 
     expect(sizes, [30, 30, 29, 29, 29, 29, 29, 29, 29, 29]);
-    expect(sizes.reduce((a, b) => a > b ? a : b) -
-        sizes.reduce((a, b) => a < b ? a : b), 1);
+    expect(
+      sizes.reduce((a, b) => a > b ? a : b) -
+          sizes.reduce((a, b) => a < b ? a : b),
+      1,
+    );
 
-    expect(distributed[0].committee, '1');
-    expect(distributed[29].committee, '1');
-    expect(distributed[30].committee, '2');
-    expect(distributed[59].committee, '2');
-    expect(distributed[60].committee, '3');
-    expect(distributed[291].committee, '10');
+    expect(distributed[0].committee, 'الأولى');
+    expect(distributed[29].committee, 'الأولى');
+    expect(distributed[30].committee, 'الثانية');
+    expect(distributed[59].committee, 'الثانية');
+    expect(distributed[60].committee, 'الثالثة');
+    expect(distributed[291].committee, 'العاشرة');
   });
 
   test('committee count cannot exceed student count', () async {
