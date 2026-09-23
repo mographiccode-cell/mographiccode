@@ -110,16 +110,95 @@ jobs:
         working-directory: buildapp
         run: flutter build windows --release
 
+      - name: Verify Windows release dependencies
+        shell: pwsh
+        run: |
+          $release = "buildapp/build/windows/x64/runner/Release"
+          $required = @(
+            "student_mail_merge.exe",
+            "printing_plugin.dll",
+            "flutter_windows.dll",
+            "pdfium.dll",
+            "dartjni.dll",
+            "data"
+          )
+          foreach ($item in $required) {
+            $path = Join-Path $release $item
+            if (-not (Test-Path $path)) {
+              throw "Missing required Windows runtime file: $item"
+            }
+          }
+
       - name: Create portable ZIP
         shell: pwsh
         run: |
           Compress-Archive -Path buildapp/build/windows/x64/runner/Release/* -DestinationPath Student-Mail-Merge-Windows-Portable.zip -Force
 
-      - name: Upload Windows EXE
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer EXE
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup compiler not found."
+          }
+          & $iscc "student-mail-merge-app\installer\student_mail_merge.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed."
+          }
+
+      - name: Smoke-test installed application
+        shell: pwsh
+        run: |
+          $installer = Resolve-Path "installer-output\Student-Mail-Merge-Setup.exe"
+          $installDir = Join-Path $env:RUNNER_TEMP "StudentMailMergeInstalled"
+
+          $p = Start-Process $installer -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/DIR=$installDir"
+          ) -Wait -PassThru
+
+          if ($p.ExitCode -ne 0) {
+            throw "Installer returned exit code $($p.ExitCode)"
+          }
+
+          $required = @(
+            "student_mail_merge.exe",
+            "printing_plugin.dll",
+            "flutter_windows.dll",
+            "pdfium.dll",
+            "dartjni.dll",
+            "data"
+          )
+
+          foreach ($item in $required) {
+            $path = Join-Path $installDir $item
+            if (-not (Test-Path $path)) {
+              throw "Installer did not install required runtime file: $item"
+            }
+          }
+
+          $app = Start-Process (Join-Path $installDir "student_mail_merge.exe") -PassThru
+          Start-Sleep -Seconds 6
+
+          if ($app.HasExited) {
+            throw "Installed application exited during startup with code $($app.ExitCode)"
+          }
+
+          Stop-Process -Id $app.Id -Force
+          Write-Host "Installed app started successfully with all DLL dependencies present."
+
+      - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: Student-Mail-Merge-EXE
-          path: buildapp/build/windows/x64/runner/Release/student_mail_merge.exe
+          name: Student-Mail-Merge-Windows-Installer
+          path: installer-output/Student-Mail-Merge-Setup.exe
           if-no-files-found: error
 
       - name: Upload Windows portable package
