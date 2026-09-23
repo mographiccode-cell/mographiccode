@@ -489,7 +489,9 @@ class MergeEngine {
         return tens[tensValue]!;
       }
 
-      return '${units[unitValue]!} و${tens[tensValue]!}';
+      final unitWord =
+          unitValue == 1 ? 'الحادية' : units[unitValue]!;
+      return '$unitWord و${tens[tensValue]!}';
     }
 
     final hundredsValue = (number ~/ 100) * 100;
@@ -500,7 +502,9 @@ class MergeEngine {
       return hundredWord;
     }
 
-    return '${_feminineOrdinal(remainder)} بعد $hundredWord';
+    final remainderWord =
+        remainder == 1 ? 'الحادية' : _feminineOrdinal(remainder);
+    return '$remainderWord بعد $hundredWord';
   }
 
   TemplateInfo inspectWord(Uint8List bytes) {
