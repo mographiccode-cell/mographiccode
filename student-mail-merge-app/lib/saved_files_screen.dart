@@ -38,8 +38,7 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
     if (bytes < 1024) return '$bytes B';
     final kb = bytes / 1024;
     if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
-    final mb = kb / 1024;
-    return '${mb.toStringAsFixed(1)} MB';
+    return '${(kb / 1024).toStringAsFixed(1)} MB';
   }
 
   String _formatDate(DateTime date) {
@@ -53,7 +52,7 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
       ShareParams(
         files: [XFile(file.path)],
         title: 'بطاقات الطلاب',
-        text: 'ملف تم إنشاؤه بواسطة تطبيق دمج بطاقات الطلاب',
+        text: 'ملف Word النهائي لبطاقات الطلاب',
       ),
     );
   }
@@ -117,13 +116,13 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            Icons.folder_copy_outlined,
+                            Icons.description_outlined,
                             size: 58,
                             color: Color(0xFF8793A7),
                           ),
                           SizedBox(height: 14),
                           Text(
-                            'لا توجد ملفات نهائية حتى الآن',
+                            'لا توجد ملفات Word نهائية حتى الآن',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -131,7 +130,7 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
                           ),
                           SizedBox(height: 6),
                           Text(
-                            'بعد تنفيذ الدمج ستظهر ملفات Word وPDF هنا تلقائيًا.',
+                            'بعد تنفيذ الدمج ستظهر ملفات DOCX هنا تلقائيًا.',
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -143,12 +142,11 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
                     child: ListView.separated(
                       padding: const EdgeInsets.all(16),
                       itemCount: _files.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final file = _files[index];
                         final name = p.basename(file.path);
-                        final isPdf =
-                            p.extension(file.path).toLowerCase() == '.pdf';
                         final modified = file.lastModifiedSync();
                         final size = file.lengthSync();
 
@@ -157,12 +155,10 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
                             padding: const EdgeInsets.all(12),
                             child: Row(
                               children: [
-                                CircleAvatar(
+                                const CircleAvatar(
                                   radius: 24,
                                   child: Icon(
-                                    isPdf
-                                        ? Icons.picture_as_pdf_rounded
-                                        : Icons.description_rounded,
+                                    Icons.description_rounded,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -192,8 +188,11 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
                                 ),
                                 IconButton(
                                   tooltip: 'فتح',
-                                  onPressed: () => OpenFilex.open(file.path),
-                                  icon: const Icon(Icons.open_in_new_rounded),
+                                  onPressed: () =>
+                                      OpenFilex.open(file.path),
+                                  icon: const Icon(
+                                    Icons.open_in_new_rounded,
+                                  ),
                                 ),
                                 IconButton(
                                   tooltip: 'مشاركة',
@@ -211,7 +210,9 @@ class _SavedFilesScreenState extends State<SavedFilesScreen> {
                                       value: 'delete',
                                       child: Row(
                                         children: [
-                                          Icon(Icons.delete_outline_rounded),
+                                          Icon(
+                                            Icons.delete_outline_rounded,
+                                          ),
                                           SizedBox(width: 8),
                                           Text('حذف'),
                                         ],
