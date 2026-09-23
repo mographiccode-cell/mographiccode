@@ -680,11 +680,13 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 24),
                 const Center(
                   child: Text(
-                    'تصميم وبرمجة م.محمود دغَبس',
+                    'تصميم وبرمجة م.محمود دغَبس\n774813824',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
                       color: Color(0xFF7A8494),
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
+                      height: 1.6,
                     ),
                   ),
                 ),
