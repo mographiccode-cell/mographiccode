@@ -35,9 +35,6 @@ jobs:
         working-directory: buildapp
         run: flutter pub get
 
-      - name: Patch Arabic RTL PDF renderer
-        run: python student-mail-merge-app/tool/patch_htmltopdfwidgets.py
-
       - name: Analyze
         working-directory: buildapp
         run: flutter analyze --no-fatal-warnings
@@ -45,13 +42,6 @@ jobs:
       - name: Run mail merge tests
         working-directory: buildapp
         run: flutter test --reporter expanded
-
-      - name: Upload Arabic PDF validation sample
-        uses: actions/upload-artifact@v4
-        with:
-          name: Arabic-PDF-Validation
-          path: buildapp/arabic_test_output.pdf
-          if-no-files-found: warn
 
       - name: Build release APK
         working-directory: buildapp
@@ -95,9 +85,6 @@ jobs:
         working-directory: buildapp
         run: flutter pub get
 
-      - name: Patch Arabic RTL PDF renderer
-        run: python student-mail-merge-app/tool/patch_htmltopdfwidgets.py
-
       - name: Analyze
         working-directory: buildapp
         run: flutter analyze --no-fatal-warnings
@@ -116,10 +103,7 @@ jobs:
           $release = "buildapp/build/windows/x64/runner/Release"
           $required = @(
             "student_mail_merge.exe",
-            "printing_plugin.dll",
             "flutter_windows.dll",
-            "pdfium.dll",
-            "dartjni.dll",
             "data"
           )
           foreach ($item in $required) {
@@ -154,7 +138,7 @@ jobs:
       - name: Smoke-test installed application
         shell: pwsh
         run: |
-          $installer = Resolve-Path "installer-output\Student-Mail-Merge-Installer-v1.3.1.exe"
+          $installer = Resolve-Path "installer-output\Student-Mail-Merge-Installer-v1.4.0.exe"
           $installDir = Join-Path $env:RUNNER_TEMP "StudentMailMergeInstalled"
 
           $p = Start-Process $installer -ArgumentList @(
@@ -170,10 +154,7 @@ jobs:
 
           $required = @(
             "student_mail_merge.exe",
-            "printing_plugin.dll",
             "flutter_windows.dll",
-            "pdfium.dll",
-            "dartjni.dll",
             "data"
           )
 
@@ -197,8 +178,8 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: Student-Mail-Merge-Windows-Installer-v1.3.1
-          path: installer-output/Student-Mail-Merge-Installer-v1.3.1.exe
+          name: Student-Mail-Merge-Windows-Installer-v1.4.0
+          path: installer-output/Student-Mail-Merge-Installer-v1.4.0.exe
           if-no-files-found: error
 
       - name: Upload Windows portable package
