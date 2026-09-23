@@ -154,7 +154,7 @@ jobs:
       - name: Smoke-test installed application
         shell: pwsh
         run: |
-          $installer = Resolve-Path "installer-output\Student-Mail-Merge-Setup.exe"
+          $installer = Resolve-Path "installer-output\Student-Mail-Merge-Installer-v1.3.0.exe"
           $installDir = Join-Path $env:RUNNER_TEMP "StudentMailMergeInstalled"
 
           $p = Start-Process $installer -ArgumentList @(
@@ -197,8 +197,8 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: Student-Mail-Merge-Windows-Installer
-          path: installer-output/Student-Mail-Merge-Setup.exe
+          name: Student-Mail-Merge-Windows-Installer-v1.3.0
+          path: installer-output/Student-Mail-Merge-Installer-v1.3.0.exe
           if-no-files-found: error
 
       - name: Upload Windows portable package
