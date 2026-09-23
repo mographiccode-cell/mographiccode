@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -76,6 +77,8 @@ class _HomePageState extends State<HomePage> {
   final MergeEngine _engine = MergeEngine();
   final TextEditingController _seatStartController =
       TextEditingController(text: '1');
+  final TextEditingController _committeeCountController =
+      TextEditingController(text: '1');
 
   PlatformFile? _excelFile;
   PlatformFile? _wordFile;
@@ -87,11 +90,13 @@ class _HomePageState extends State<HomePage> {
 
   bool _busy = false;
   String _stage = '';
-  String _status = 'اختر ملف Excel ثم Word وحدد بداية رقم الجلوس.';
+  String _status =
+      'اختر ملف Excel ثم Word وحدد بداية رقم الجلوس وعدد اللجان.';
 
   @override
   void dispose() {
     _seatStartController.dispose();
+    _committeeCountController.dispose();
     super.dispose();
   }
 
@@ -109,6 +114,25 @@ class _HomePageState extends State<HomePage> {
     return start + _records.length - 1;
   }
 
+  int? get _committeeCount {
+    final value = int.tryParse(_committeeCountController.text.trim());
+    if (value == null || value < 1) return null;
+    return value;
+  }
+
+  bool get _committeeCountValid {
+    final count = _committeeCount;
+    return count != null &&
+        _records.isNotEmpty &&
+        count <= _records.length;
+  }
+
+  List<int> get _committeeSizes {
+    final count = _committeeCount;
+    if (count == null || _records.isEmpty) return const [];
+    return _engine.committeeSizes(_records.length, count);
+  }
+
   List<String> get _missingFields {
     final excel = _excel;
     final template = _template;
@@ -116,12 +140,53 @@ class _HomePageState extends State<HomePage> {
     return _engine.missingFields(excel, template);
   }
 
-  List<MergeRecord> _numberedRecords() {
+  List<MergeRecord> _preparedRecords() {
     final start = _seatStart;
+    final committees = _committeeCount;
+
     if (start == null) {
       throw Exception('أدخل رقم بداية جلوس صحيحًا، مثال: 300.');
     }
-    return _engine.renumberSeats(_records, start);
+    if (committees == null) {
+      throw Exception('أدخل عدد لجان صحيحًا.');
+    }
+    if (committees > _records.length) {
+      throw Exception(
+        'عدد اللجان لا يمكن أن يكون أكبر من عدد الطلاب (${_records.length}).',
+      );
+    }
+
+    final numbered = _engine.renumberSeats(_records, start);
+    return _engine.distributeCommittees(numbered, committees);
+  }
+
+  String _committeePreviewText() {
+    final count = _committeeCount;
+
+    if (_records.isEmpty) {
+      return 'بعد اختيار Excel سيظهر توزيع الطلاب على اللجان هنا.';
+    }
+    if (count == null) {
+      return 'أدخل عددًا صحيحًا للجان.';
+    }
+    if (count > _records.length) {
+      return 'عدد اللجان أكبر من عدد الطلاب.';
+    }
+
+    final sizes = _committeeSizes;
+    if (sizes.isEmpty) return '';
+
+    final minSize = sizes.reduce((a, b) => a < b ? a : b);
+    final maxSize = sizes.reduce((a, b) => a > b ? a : b);
+    final maxCount = sizes.where((size) => size == maxSize).length;
+    final minCount = sizes.where((size) => size == minSize).length;
+
+    if (minSize == maxSize) {
+      return '${_records.length} طالب ÷ $count لجان = $maxSize طالب في كل لجنة.';
+    }
+
+    return '${_records.length} طالب ÷ $count لجان = '
+        '$maxCount لجان × $maxSize طالب، و$minCount لجان × $minSize طالب.';
   }
 
   Future<void> _pickExcel() async {
@@ -143,7 +208,7 @@ class _HomePageState extends State<HomePage> {
         _excelBytes = bytes;
         _excel = result;
         _status =
-            'تم اكتشاف ${result.records.length} طالب/طالبة من ${result.sheetCount} أوراق. سيتم تطبيق رقم الجلوس المتسلسل الذي تحدده.';
+            'تم اكتشاف ${result.records.length} طالب/طالبة من ${result.sheetCount} أوراق.';
       });
     } catch (error) {
       _showError(error);
@@ -194,19 +259,27 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (!_committeeCountValid) {
+      _showError(
+        'أدخل عدد لجان من 1 إلى ${_records.length}.',
+      );
+      return;
+    }
+
     final missing = _missingFields;
     if (missing.isNotEmpty) {
       _showError('بيانات ناقصة: ${missing.join('، ')}');
       return;
     }
 
-    final records = _numberedRecords();
+    final records = _preparedRecords();
     final startSeat = records.first.seat;
     final endSeat = records.last.seat;
+    final committeeCount = _committeeCount!;
 
     _setBusy(
       'دمج Word',
-      'جارٍ ترقيم الطلاب من $startSeat إلى $endSeat وكتابة البيانات داخل البطاقات...',
+      'جارٍ ترقيم الطلاب من $startSeat إلى $endSeat وتوزيعهم بالتساوي على $committeeCount لجان...',
     );
 
     try {
@@ -218,7 +291,7 @@ class _HomePageState extends State<HomePage> {
       final dir = await OutputManager.getOutputDirectory();
       final stamp = OutputManager.timestampName();
       final fileName =
-          'student_cards_${startSeat}_${endSeat}_$stamp.docx';
+          'student_cards_${startSeat}_${endSeat}_committees_$committeeCount_$stamp.docx';
       final docxPath = p.join(dir.path, fileName);
 
       await File(docxPath).writeAsBytes(mergedDocx, flush: true);
@@ -230,13 +303,15 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _stage = 'اكتمل';
         _status =
-            'تم إنشاء ملف Word بنجاح: ${records.length} سجل، أرقام الجلوس $startSeat–$endSeat، $pageCount صفحة.';
+            'تم إنشاء Word: ${records.length} طالب، أرقام الجلوس $startSeat–$endSeat، $committeeCount لجان، $pageCount صفحة.';
       });
 
       await _showResult(
         docxPath: docxPath,
         startSeat: startSeat,
         endSeat: endSeat,
+        committeeCount: committeeCount,
+        committeeSizes: _committeeSizes,
       );
     } catch (error) {
       _showError(error);
@@ -273,7 +348,12 @@ class _HomePageState extends State<HomePage> {
     required String docxPath,
     required String startSeat,
     required String endSeat,
+    required int committeeCount,
+    required List<int> committeeSizes,
   }) async {
+    final minSize = committeeSizes.reduce((a, b) => a < b ? a : b);
+    final maxSize = committeeSizes.reduce((a, b) => a > b ? a : b);
+
     await showModalBottomSheet(
       context: context,
       showDragHandle: true,
@@ -309,7 +389,22 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'تم تطبيق ترقيم متسلسل واحد من $startSeat إلى $endSeat وحفظ ملف DOCX النهائي.',
+                    'أرقام الجلوس: $startSeat–$endSeat\n'
+                    'عدد اللجان: $committeeCount\n'
+                    'عدد الطلاب في اللجنة: من $minSize إلى $maxSize فقط.',
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: List.generate(
+                      committeeSizes.length,
+                      (index) => Chip(
+                        label: Text(
+                          'لجنة ${index + 1}: ${committeeSizes[index]}',
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
@@ -364,6 +459,7 @@ class _HomePageState extends State<HomePage> {
     final missing = _missingFields;
     final start = _seatStart;
     final end = _seatEnd;
+    final committeeCount = _committeeCount;
 
     final ready = _excelBytes != null &&
         _wordBytes != null &&
@@ -371,6 +467,7 @@ class _HomePageState extends State<HomePage> {
         _template != null &&
         missing.isEmpty &&
         start != null &&
+        _committeeCountValid &&
         !_busy;
 
     return Scaffold(
@@ -416,13 +513,13 @@ class _HomePageState extends State<HomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.description_rounded,
+                        Icons.groups_rounded,
                         color: Colors.white,
-                        size: 34,
+                        size: 36,
                       ),
                       SizedBox(height: 14),
                       Text(
-                        'Excel + Word → Word مدموج',
+                        'Excel + Word → توزيع لجان ودمج',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 22,
@@ -431,7 +528,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       SizedBox(height: 7),
                       Text(
-                        'الناتج النهائي DOCX فقط. يحافظ على تصميم Word ويكتب بيانات الطلاب وأرقام الجلوس المتسلسلة داخله.',
+                        'حدد بداية رقم الجلوس وعدد اللجان، وسيتم توزيع جميع الطلاب بالتساوي ثم كتابة البيانات داخل تصميم Word.',
                         style: TextStyle(
                           color: Color(0xFFE7EEFA),
                           height: 1.5,
@@ -463,61 +560,59 @@ class _HomePageState extends State<HomePage> {
                   onTap: _busy ? null : _pickWord,
                 ),
                 const SizedBox(height: 12),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(17),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            CircleAvatar(radius: 17, child: Text('3')),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'بداية رقم الجلوس',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
+                _NumberSettingCard(
+                  number: '3',
+                  title: 'بداية رقم الجلوس',
+                  icon: Icons.format_list_numbered_rtl,
+                  controller: _seatStartController,
+                  hint: 'مثال: 300',
+                  enabled: !_busy,
+                  onChanged: (_) => setState(() {}),
+                  footer: start == null
+                      ? 'أدخل رقمًا صحيحًا أكبر من صفر.'
+                      : _records.isEmpty
+                          ? 'سيبدأ أول طالب بالرقم $start.'
+                          : 'أول طالب = $start  •  آخر طالب = $end  •  الرقم لا يعاد عند تغيير الصف.',
+                  error: start == null,
+                ),
+                const SizedBox(height: 12),
+                _NumberSettingCard(
+                  number: '4',
+                  title: 'عدد اللجان',
+                  icon: Icons.groups_2_outlined,
+                  controller: _committeeCountController,
+                  hint: 'مثال: 10',
+                  enabled: !_busy,
+                  onChanged: (_) => setState(() {}),
+                  footer: _committeePreviewText(),
+                  error: committeeCount == null ||
+                      (_records.isNotEmpty &&
+                          committeeCount > _records.length),
+                ),
+                if (_committeeSizes.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: List.generate(
+                          _committeeSizes.length,
+                          (index) => Chip(
+                            avatar: const Icon(
+                              Icons.groups_rounded,
+                              size: 17,
                             ),
-                            Icon(Icons.format_list_numbered_rtl),
-                          ],
-                        ),
-                        const SizedBox(height: 13),
-                        TextField(
-                          controller: _seatStartController,
-                          enabled: !_busy,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          onChanged: (_) => setState(() {}),
-                          decoration: const InputDecoration(
-                            labelText: 'ابدأ الترقيم من',
-                            hintText: 'مثال: 300',
-                            prefixIcon: Icon(Icons.pin_outlined),
+                            label: Text(
+                              'لجنة ${index + 1}: ${_committeeSizes[index]}',
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Text(
-                          start == null
-                              ? 'أدخل رقمًا صحيحًا أكبر من صفر.'
-                              : _records.isEmpty
-                                  ? 'سيبدأ أول طالب بالرقم $start.'
-                                  : 'أول طالب = $start  •  آخر طالب = $end  •  الرقم يستمر بين جميع الصفوف.',
-                          style: TextStyle(
-                            color: start == null
-                                ? Theme.of(context).colorScheme.error
-                                : const Color(0xFF506079),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                ],
                 if (_template != null) ...[
                   const SizedBox(height: 12),
                   Card(
@@ -601,7 +696,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     icon: const Icon(Icons.merge_type_rounded),
                     label: const Text(
-                      'دمج البيانات وإنشاء ملف Word',
+                      'توزيع اللجان ودمج ملف Word',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
@@ -684,6 +779,84 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NumberSettingCard extends StatelessWidget {
+  final String number;
+  final String title;
+  final IconData icon;
+  final TextEditingController controller;
+  final String hint;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+  final String footer;
+  final bool error;
+
+  const _NumberSettingCard({
+    required this.number,
+    required this.title,
+    required this.icon,
+    required this.controller,
+    required this.hint,
+    required this.enabled,
+    required this.onChanged,
+    required this.footer,
+    required this.error,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(17),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(radius: 17, child: Text(number)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Icon(icon),
+              ],
+            ),
+            const SizedBox(height: 13),
+            TextField(
+              controller: controller,
+              enabled: enabled,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+              ],
+              onChanged: onChanged,
+              decoration: InputDecoration(
+                hintText: hint,
+                prefixIcon: Icon(icon),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              footer,
+              style: TextStyle(
+                color: error
+                    ? Theme.of(context).colorScheme.error
+                    : const Color(0xFF506079),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
