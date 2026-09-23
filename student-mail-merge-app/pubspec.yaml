@@ -1,7 +1,7 @@
 name: student_mail_merge
 description: Excel + Word student card mail merge app for Android and Windows.
 publish_to: 'none'
-version: 1.4.0+7
+version: 1.5.0+8
 
 environment:
   sdk: '>=3.12.0 <4.0.0'
