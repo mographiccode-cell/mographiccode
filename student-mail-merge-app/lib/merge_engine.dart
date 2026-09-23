@@ -57,6 +57,28 @@ class MergeRecord {
     );
   }
 
+  MergeRecord withCommittee(String newCommittee) {
+    final updatedRaw = Map<String, String>.from(raw);
+
+    for (final key in updatedRaw.keys.toList()) {
+      if (_committeeAliases.contains(normalize(key))) {
+        updatedRaw[key] = newCommittee;
+      }
+    }
+
+    updatedRaw['اللجنة'] = newCommittee;
+    updatedRaw['اللجنه'] = newCommittee;
+    updatedRaw['رقم اللجنة'] = newCommittee;
+
+    return MergeRecord(
+      name: name,
+      grade: grade,
+      committee: newCommittee,
+      seat: seat,
+      raw: updatedRaw,
+    );
+  }
+
   static String normalize(String input) => input
       .trim()
       .replaceAll(RegExp(r'[\s_\-–—/\\:：]+'), '')
@@ -336,6 +358,62 @@ class MergeEngine {
     return List<MergeRecord>.generate(
       records.length,
       (index) => records[index].withSeat((startNumber + index).toString()),
+      growable: false,
+    );
+  }
+
+  List<MergeRecord> distributeCommittees(
+    List<MergeRecord> records,
+    int committeeCount,
+  ) {
+    if (records.isEmpty) {
+      throw Exception('لا توجد بيانات طلاب لتوزيعها على اللجان.');
+    }
+    if (committeeCount < 1) {
+      throw Exception('عدد اللجان يجب أن يكون 1 أو أكبر.');
+    }
+    if (committeeCount > records.length) {
+      throw Exception(
+        'عدد اللجان لا يمكن أن يكون أكبر من عدد الطلاب (${records.length}).',
+      );
+    }
+
+    final baseSize = records.length ~/ committeeCount;
+    final remainder = records.length % committeeCount;
+    final distributed = <MergeRecord>[];
+
+    var sourceIndex = 0;
+    for (var committeeIndex = 0;
+        committeeIndex < committeeCount;
+        committeeIndex++) {
+      final committeeSize =
+          baseSize + (committeeIndex < remainder ? 1 : 0);
+      final committeeNumber = (committeeIndex + 1).toString();
+
+      for (var i = 0; i < committeeSize; i++) {
+        distributed.add(
+          records[sourceIndex].withCommittee(committeeNumber),
+        );
+        sourceIndex++;
+      }
+    }
+
+    return distributed;
+  }
+
+  List<int> committeeSizes(int studentCount, int committeeCount) {
+    if (studentCount < 1 ||
+        committeeCount < 1 ||
+        committeeCount > studentCount) {
+      return const [];
+    }
+
+    final baseSize = studentCount ~/ committeeCount;
+    final remainder = studentCount % committeeCount;
+
+    return List<int>.generate(
+      committeeCount,
+      (index) => baseSize + (index < remainder ? 1 : 0),
       growable: false,
     );
   }
