@@ -6,10 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 
 import 'merge_engine.dart';
+import 'output_manager.dart';
+import 'saved_files_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -215,8 +216,8 @@ class _HomePageState extends State<HomePage> {
         records: records,
       );
 
-      final dir = await getApplicationDocumentsDirectory();
-      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final dir = await OutputManager.getOutputDirectory();
+      final stamp = OutputManager.timestampName();
       final docxPath = p.join(dir.path, 'student_cards_$stamp.docx');
       await File(docxPath).writeAsBytes(mergedDocx, flush: true);
 
@@ -354,6 +355,19 @@ class _HomePageState extends State<HomePage> {
                     icon: const Icon(Icons.description_outlined),
                     label: const Text('فتح Word المدموج'),
                   ),
+                  const SizedBox(height: 9),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.of(this.context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SavedFilesScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.folder_copy_rounded),
+                    label: const Text('عرض الملفات النهائية'),
+                  ),
                 ],
               ),
             ),
@@ -400,6 +414,19 @@ class _HomePageState extends State<HomePage> {
         centerTitle: true,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'الملفات النهائية',
+            icon: const Icon(Icons.folder_copy_rounded),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SavedFilesScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Directionality(
         textDirection: TextDirection.rtl,
@@ -598,6 +625,49 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                   ),
+                const SizedBox(height: 14),
+                Card(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SavedFilesScreen(),
+                        ),
+                      );
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            child: Icon(Icons.folder_copy_rounded),
+                          ),
+                          SizedBox(width: 13),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'الملفات النهائية',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                SizedBox(height: 3),
+                                Text(
+                                  'عرض كل ملفات Word وPDF السابقة، فتحها أو مشاركتها.',
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_left_rounded),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 14),
                 Text(
                   Platform.isWindows
