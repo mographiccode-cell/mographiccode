@@ -1,5 +1,5 @@
 #define MyAppName "Student Mail Merge"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.3.1"
 #define MyAppPublisher "M. Mahmoud Dghbas"
 #define MyAppExeName "student_mail_merge.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\..\installer-output
-OutputBaseFilename=Student-Mail-Merge-Installer-v1.3.0
+OutputBaseFilename=Student-Mail-Merge-Installer-v1.3.1
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
