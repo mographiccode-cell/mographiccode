@@ -388,11 +388,11 @@ class MergeEngine {
         committeeIndex++) {
       final committeeSize =
           baseSize + (committeeIndex < remainder ? 1 : 0);
-      final committeeNumber = (committeeIndex + 1).toString();
+      final committeeLabel = committeeName(committeeIndex + 1);
 
       for (var i = 0; i < committeeSize; i++) {
         distributed.add(
-          records[sourceIndex].withCommittee(committeeNumber),
+          records[sourceIndex].withCommittee(committeeLabel),
         );
         sourceIndex++;
       }
@@ -416,6 +416,91 @@ class MergeEngine {
       (index) => baseSize + (index < remainder ? 1 : 0),
       growable: false,
     );
+  }
+
+  String committeeName(int number) {
+    if (number < 1) {
+      throw Exception('رقم اللجنة يجب أن يكون 1 أو أكبر.');
+    }
+    if (number > 999) {
+      throw Exception(
+        'التسمية العربية التلقائية للجان تدعم حتى 999 لجنة.',
+      );
+    }
+
+    return _feminineOrdinal(number);
+  }
+
+  String _feminineOrdinal(int number) {
+    const units = <int, String>{
+      1: 'الأولى',
+      2: 'الثانية',
+      3: 'الثالثة',
+      4: 'الرابعة',
+      5: 'الخامسة',
+      6: 'السادسة',
+      7: 'السابعة',
+      8: 'الثامنة',
+      9: 'التاسعة',
+      10: 'العاشرة',
+      11: 'الحادية عشرة',
+      12: 'الثانية عشرة',
+      13: 'الثالثة عشرة',
+      14: 'الرابعة عشرة',
+      15: 'الخامسة عشرة',
+      16: 'السادسة عشرة',
+      17: 'السابعة عشرة',
+      18: 'الثامنة عشرة',
+      19: 'التاسعة عشرة',
+    };
+
+    const tens = <int, String>{
+      20: 'العشرون',
+      30: 'الثلاثون',
+      40: 'الأربعون',
+      50: 'الخمسون',
+      60: 'الستون',
+      70: 'السبعون',
+      80: 'الثمانون',
+      90: 'التسعون',
+    };
+
+    const hundreds = <int, String>{
+      100: 'المائة',
+      200: 'المائتان',
+      300: 'الثلاثمائة',
+      400: 'الأربعمائة',
+      500: 'الخمسمائة',
+      600: 'الستمائة',
+      700: 'السبعمائة',
+      800: 'الثمانمائة',
+      900: 'التسعمائة',
+    };
+
+    if (number < 20) {
+      return units[number]!;
+    }
+
+    if (number < 100) {
+      final tensValue = (number ~/ 10) * 10;
+      final unitValue = number % 10;
+
+      if (unitValue == 0) {
+        return tens[tensValue]!;
+      }
+
+      return '${units[unitValue]!} و${tens[tensValue]!}';
+    }
+
+    final hundredsValue = (number ~/ 100) * 100;
+    final remainder = number % 100;
+    final hundredWord = hundreds[hundredsValue]!;
+
+    if (remainder == 0) {
+      return hundredWord;
+    }
+
+    return '${_feminineOrdinal(remainder)} بعد $hundredWord';
   }
 
   TemplateInfo inspectWord(Uint8List bytes) {
@@ -469,12 +554,20 @@ class MergeEngine {
 
   List<String> missingFields(
     ExcelImportResult excel,
-    TemplateInfo template,
-  ) {
+    TemplateInfo template, {
+    bool committeeWillBeGenerated = false,
+  }) {
     final missing = <String>[];
 
     if (template.mode == WordTemplateMode.placeholders) {
       for (final field in template.placeholders) {
+        final normalized = MergeRecord.normalize(field);
+
+        if (committeeWillBeGenerated &&
+            MergeRecord._committeeAliases.contains(normalized)) {
+          continue;
+        }
+
         final hasValue = excel.records.any(
           (record) => record.valueFor(field).isNotEmpty,
         );
