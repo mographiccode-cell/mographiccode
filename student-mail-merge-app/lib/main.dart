@@ -325,7 +325,7 @@ class _HomePageState extends State<HomePage> {
           ? '_committees_${committeeCount}'
           : '_original_committees';
       final fileName =
-          'student_cards_${startSeat}_${endSeat}$committeePart_$stamp.docx';
+          'student_cards_${startSeat}_${endSeat}${committeePart}_$stamp.docx';
       final docxPath = p.join(dir.path, fileName);
 
       await File(docxPath).writeAsBytes(mergedDocx, flush: true);
@@ -446,7 +446,7 @@ class _HomePageState extends State<HomePage> {
                         committeeSizes.length,
                         (index) => Chip(
                           label: Text(
-                            '${_engine.committeeName(index + 1)}: ${committeeSizes[index]}',
+                            'اللجنة ${_engine.committeeName(index + 1)}: ${committeeSizes[index]}',
                           ),
                         ),
                       ),
@@ -719,7 +719,7 @@ class _HomePageState extends State<HomePage> {
                               size: 17,
                             ),
                             label: Text(
-                              '${_engine.committeeName(index + 1)}: ${_committeeSizes[index]}',
+                              'اللجنة ${_engine.committeeName(index + 1)}: ${_committeeSizes[index]}',
                             ),
                           ),
                         ),
@@ -809,11 +809,13 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     icon: const Icon(Icons.merge_type_rounded),
-                    label: const Text(
+                    label: Text(
                       _autoDistributeCommittees
                           ? 'توزيع اللجان ودمج ملف Word'
                           : 'دمج ملف Word',
-                      style: TextStyle(fontWeight: FontWeight.w800),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 const SizedBox(height: 12),
