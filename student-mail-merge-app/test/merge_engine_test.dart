@@ -140,11 +140,11 @@ void main() {
     expect(engine.committeeName(11), 'الحادية عشرة');
     expect(engine.committeeName(12), 'الثانية عشرة');
     expect(engine.committeeName(20), 'العشرون');
-    expect(engine.committeeName(21), 'الأولى والعشرون');
+    expect(engine.committeeName(21), 'الحادية والعشرون');
     expect(engine.committeeName(32), 'الثانية والثلاثون');
     expect(engine.committeeName(99), 'التاسعة والتسعون');
     expect(engine.committeeName(100), 'المائة');
-    expect(engine.committeeName(121), 'الأولى والعشرون بعد المائة');
+    expect(engine.committeeName(121), 'الحادية والعشرون بعد المائة');
   });
 
   test('12 students are distributed evenly over 5 Arabic-named committees',
