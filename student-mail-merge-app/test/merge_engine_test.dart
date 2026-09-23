@@ -84,7 +84,8 @@ List<String> _cardTexts(Uint8List docxBytes) {
             .join(),
       )
       .where(
-        (text) => text.contains('اسم الطالبة') &&
+        (text) =>
+            text.contains('اسم الطالبة') &&
             text.contains('رقم الجلوس'),
       )
       .toList();
@@ -117,42 +118,96 @@ void main() {
     expect(numbered.last.seat, '311');
   });
 
-  test('Word merge creates 10 cards per page and fills values', () async {
+  test('12 students are distributed evenly over 5 committees', () async {
     final engine = MergeEngine();
     final excel = await engine.readExcel(_makeExcel());
     final numbered = engine.renumberSeats(excel.records, 300);
+    final distributed = engine.distributeCommittees(numbered, 5);
+
+    expect(engine.committeeSizes(12, 5), [3, 3, 2, 2, 2]);
+    expect(distributed.length, 12);
+
+    expect(distributed[0].committee, '1');
+    expect(distributed[2].committee, '1');
+    expect(distributed[3].committee, '2');
+    expect(distributed[5].committee, '2');
+    expect(distributed[6].committee, '3');
+    expect(distributed[7].committee, '3');
+    expect(distributed[8].committee, '4');
+    expect(distributed[9].committee, '4');
+    expect(distributed[10].committee, '5');
+    expect(distributed[11].committee, '5');
+
+    expect(distributed[3].seat, '303');
+    expect(distributed[3].valueFor('اللجنة'), '2');
+    expect(distributed[3].valueFor('رقم اللجنة'), '2');
+  });
+
+  test('Word merge writes redistributed committee numbers into cards', () async {
+    final engine = MergeEngine();
+    final excel = await engine.readExcel(_makeExcel());
+    final numbered = engine.renumberSeats(excel.records, 300);
+    final distributed = engine.distributeCommittees(numbered, 5);
     final template = await _makeTemplate();
 
     final merged = engine.mergeDocx(
       templateBytes: template,
-      records: numbered,
+      records: distributed,
     );
 
     expect(merged.length, greaterThan(1000));
 
     final cards = _cardTexts(merged);
     expect(cards.length, 20);
+
     expect(cards[0], contains('طالبة رابع 1'));
+    expect(cards[0], contains('اللجنة: 1'));
     expect(cards[0], contains('( 300 )'));
-    expect(cards[4], contains('طالبة خامس 1'));
-    expect(cards[4], contains('( 304 )'));
-    expect(cards[8], contains('طالبة سادس 1'));
-    expect(cards[8], contains('( 308 )'));
+
+    expect(cards[3], contains('اللجنة: 2'));
+    expect(cards[3], contains('( 303 )'));
+
+    expect(cards[6], contains('اللجنة: 3'));
+    expect(cards[8], contains('اللجنة: 4'));
+    expect(cards[10], contains('اللجنة: 5'));
     expect(cards[11], contains('( 311 )'));
   });
 
-  test('292 records starting from 300 end at 591 without reset', () async {
+  test('292 students over 10 committees differ by at most one student',
+      () async {
     final engine = MergeEngine();
     final excel = await engine.readExcel(
       _makeExcel(fourth: 90, fifth: 101, sixth: 101),
     );
-    final numbered = engine.renumberSeats(excel.records, 300);
 
-    expect(numbered.length, 292);
-    expect(numbered[89].seat, '389');
-    expect(numbered[90].seat, '390');
-    expect(numbered[190].seat, '490');
-    expect(numbered[191].seat, '491');
-    expect(numbered.last.seat, '591');
+    final numbered = engine.renumberSeats(excel.records, 300);
+    final distributed = engine.distributeCommittees(numbered, 10);
+    final sizes = engine.committeeSizes(distributed.length, 10);
+
+    expect(distributed.length, 292);
+    expect(distributed.first.seat, '300');
+    expect(distributed.last.seat, '591');
+
+    expect(sizes, [30, 30, 29, 29, 29, 29, 29, 29, 29, 29]);
+    expect(sizes.reduce((a, b) => a > b ? a : b) -
+        sizes.reduce((a, b) => a < b ? a : b), 1);
+
+    expect(distributed[0].committee, '1');
+    expect(distributed[29].committee, '1');
+    expect(distributed[30].committee, '2');
+    expect(distributed[59].committee, '2');
+    expect(distributed[60].committee, '3');
+    expect(distributed[291].committee, '10');
+  });
+
+  test('committee count cannot exceed student count', () async {
+    final engine = MergeEngine();
+    final excel = await engine.readExcel(_makeExcel());
+
+    expect(
+      () => engine.distributeCommittees(excel.records, 13),
+      throwsA(isA<Exception>()),
+    );
+    expect(engine.committeeSizes(12, 13), isEmpty);
   });
 }
