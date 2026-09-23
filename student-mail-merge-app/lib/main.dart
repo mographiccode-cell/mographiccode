@@ -291,7 +291,7 @@ class _HomePageState extends State<HomePage> {
       final dir = await OutputManager.getOutputDirectory();
       final stamp = OutputManager.timestampName();
       final fileName =
-          'student_cards_${startSeat}_${endSeat}_committees_$committeeCount_$stamp.docx';
+          'student_cards_${startSeat}_${endSeat}_committees_${committeeCount}_$stamp.docx';
       final docxPath = p.join(dir.path, fileName);
 
       await File(docxPath).writeAsBytes(mergedDocx, flush: true);
