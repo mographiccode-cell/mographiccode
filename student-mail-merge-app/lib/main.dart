@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -6,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
-import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'merge_engine.dart';
 import 'output_manager.dart';
@@ -87,8 +88,8 @@ class _HomePageState extends State<HomePage> {
   TemplateInfo? _template;
 
   bool _busy = false;
-  String _status = 'اختر ملف Excel ثم Word وحدد بداية رقم الجلوس.';
   String _stage = '';
+  String _status = 'اختر ملف Excel ثم Word وحدد بداية رقم الجلوس.';
 
   @override
   void dispose() {
@@ -132,7 +133,7 @@ class _HomePageState extends State<HomePage> {
     );
     if (file == null) return;
 
-    _setBusy('قراءة Excel', 'جارٍ تحليل الأوراق والصفوف تلقائيًا...');
+    _setBusy('قراءة Excel', 'جارٍ تحليل الأوراق والطلاب تلقائيًا...');
 
     try {
       final bytes = await file.readAsBytes();
@@ -144,7 +145,7 @@ class _HomePageState extends State<HomePage> {
         _excelBytes = bytes;
         _excel = result;
         _status =
-            'تم اكتشاف ${result.records.length} طالب/طالبة من ${result.sheetCount} أوراق. سيتم تجاهل أرقام الجلوس القديمة عند التوليد.';
+            'تم اكتشاف ${result.records.length} طالب/طالبة من ${result.sheetCount} أوراق. سيتم تطبيق رقم الجلوس المتسلسل الذي تحدده.';
       });
     } catch (error) {
       _showError(error);
@@ -172,7 +173,7 @@ class _HomePageState extends State<HomePage> {
         _wordBytes = bytes;
         _template = info;
         _status =
-            'تم اكتشاف ${info.cardsPerPage} بطاقات في الصفحة. التصميم سيبقى من Word.';
+            'تم اكتشاف ${info.cardsPerPage} بطاقات في الصفحة. سيتم الحفاظ على تصميم Word نفسه.';
       });
     } catch (error) {
       _showError(error);
@@ -206,8 +207,8 @@ class _HomePageState extends State<HomePage> {
     final endSeat = records.last.seat;
 
     _setBusy(
-      'إنشاء البطاقات',
-      'ترقيم متسلسل من $startSeat إلى $endSeat ثم دمج البيانات داخل Word...',
+      'دمج Word',
+      'جارٍ ترقيم الطلاب من $startSeat إلى $endSeat وكتابة البيانات داخل البطاقات...',
     );
 
     try {
@@ -218,43 +219,11 @@ class _HomePageState extends State<HomePage> {
 
       final dir = await OutputManager.getOutputDirectory();
       final stamp = OutputManager.timestampName();
-      final docxPath = p.join(dir.path, 'student_cards_$stamp.docx');
+      final fileName =
+          'student_cards_${startSeat}_${endSeat}_$stamp.docx';
+      final docxPath = p.join(dir.path, fileName);
+
       await File(docxPath).writeAsBytes(mergedDocx, flush: true);
-
-      late String pdfPath;
-      late Uint8List pdfBytes;
-
-      String? officePdfPath;
-      if (Platform.isWindows) {
-        if (mounted) {
-          setState(() {
-            _stage = 'إنشاء PDF مطابق لـ Word';
-            _status =
-                'تم إنشاء Word. جارٍ استخدام Microsoft Word أو LibreOffice لإخراج PDF بنفس الخطوط والتخطيط...';
-          });
-        }
-        officePdfPath = await _engine.tryWindowsOfficePdf(docxPath);
-      }
-
-      if (officePdfPath != null && File(officePdfPath).existsSync()) {
-        pdfPath = officePdfPath;
-        pdfBytes = await File(pdfPath).readAsBytes();
-      } else {
-        if (mounted) {
-          setState(() {
-            _stage = 'معالجة PDF العربي';
-            _status =
-                'جارٍ إنشاء PDF بمحرك يدعم العربية واتجاه RTL والخطوط المضمنة...';
-          });
-        }
-
-        pdfBytes = await _engine.buildDesignPdfFromTemplate(
-          templateBytes: _wordBytes!,
-          records: records,
-        );
-        pdfPath = p.join(dir.path, 'student_cards_$stamp.pdf');
-        await File(pdfPath).writeAsBytes(pdfBytes, flush: true);
-      }
 
       if (!mounted) return;
 
@@ -263,13 +232,11 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _stage = 'اكتمل';
         _status =
-            'تم بنجاح: ${records.length} سجل، أرقام الجلوس $startSeat–$endSeat، $pageCount صفحة.';
+            'تم إنشاء ملف Word بنجاح: ${records.length} سجل، أرقام الجلوس $startSeat–$endSeat، $pageCount صفحة.';
       });
 
       await _showResult(
         docxPath: docxPath,
-        pdfPath: pdfPath,
-        pdfBytes: pdfBytes,
         startSeat: startSeat,
         endSeat: endSeat,
       );
@@ -278,6 +245,16 @@ class _HomePageState extends State<HomePage> {
     } finally {
       _finishBusy();
     }
+  }
+
+  Future<void> _shareWord(String path) async {
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(path)],
+        title: 'بطاقات الطلاب',
+        text: 'ملف Word النهائي لبطاقات الطلاب',
+      ),
+    );
   }
 
   void _setBusy(String stage, String status) {
@@ -296,8 +273,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _showResult({
     required String docxPath,
-    required String pdfPath,
-    required Uint8List pdfBytes,
     required String startSeat,
     required String endSeat,
   }) async {
@@ -305,7 +280,7 @@ class _HomePageState extends State<HomePage> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) {
+      builder: (sheetContext) {
         return Directionality(
           textDirection: TextDirection.rtl,
           child: SafeArea(
@@ -319,11 +294,14 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       CircleAvatar(
                         backgroundColor: Color(0xFFE6F4EA),
-                        child: Icon(Icons.check_rounded, color: Color(0xFF167B3F)),
+                        child: Icon(
+                          Icons.check_rounded,
+                          color: Color(0xFF167B3F),
+                        ),
                       ),
                       SizedBox(width: 12),
                       Text(
-                        'تم إنشاء البطاقات',
+                        'تم إنشاء ملف Word',
                         style: TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.bold,
@@ -333,40 +311,32 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'تم تطبيق ترقيم واحد متسلسل على جميع الصفوف من $startSeat إلى $endSeat بدون إعادة الترقيم عند الانتقال بين الصفوف.',
+                    'تم تطبيق ترقيم متسلسل واحد من $startSeat إلى $endSeat وحفظ ملف DOCX النهائي.',
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
-                    onPressed: () async {
-                      await Printing.layoutPdf(onLayout: (_) async => pdfBytes);
-                    },
-                    icon: const Icon(Icons.print_rounded),
-                    label: const Text('طباعة PDF الآن'),
-                  ),
-                  const SizedBox(height: 9),
-                  OutlinedButton.icon(
-                    onPressed: () => OpenFilex.open(pdfPath),
-                    icon: const Icon(Icons.picture_as_pdf_outlined),
-                    label: const Text('فتح PDF'),
-                  ),
-                  const SizedBox(height: 9),
-                  OutlinedButton.icon(
                     onPressed: () => OpenFilex.open(docxPath),
-                    icon: const Icon(Icons.description_outlined),
-                    label: const Text('فتح Word المدموج'),
+                    icon: const Icon(Icons.description_rounded),
+                    label: const Text('فتح ملف Word'),
+                  ),
+                  const SizedBox(height: 9),
+                  OutlinedButton.icon(
+                    onPressed: () => _shareWord(docxPath),
+                    icon: const Icon(Icons.share_rounded),
+                    label: const Text('مشاركة ملف Word'),
                   ),
                   const SizedBox(height: 9),
                   OutlinedButton.icon(
                     onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.of(this.context).push(
+                      Navigator.pop(sheetContext);
+                      Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const SavedFilesScreen(),
                         ),
                       );
                     },
                     icon: const Icon(Icons.folder_copy_rounded),
-                    label: const Text('عرض الملفات النهائية'),
+                    label: const Text('الملفات النهائية'),
                   ),
                 ],
               ),
@@ -447,10 +417,14 @@ class _HomePageState extends State<HomePage> {
                   child: const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.badge_outlined, color: Colors.white, size: 34),
+                      Icon(
+                        Icons.description_rounded,
+                        color: Colors.white,
+                        size: 34,
+                      ),
                       SizedBox(height: 14),
                       Text(
-                        'Excel + Word → بطاقات جاهزة للطباعة',
+                        'Excel + Word → Word مدموج',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 22,
@@ -459,8 +433,11 @@ class _HomePageState extends State<HomePage> {
                       ),
                       SizedBox(height: 7),
                       Text(
-                        'يحافظ على تصميم Word ويطبّق رقم جلوس متسلسلًا واحدًا على جميع الصفوف.',
-                        style: TextStyle(color: Color(0xFFE7EEFA), height: 1.5),
+                        'الناتج النهائي DOCX فقط. يحافظ على تصميم Word ويكتب بيانات الطلاب وأرقام الجلوس المتسلسلة داخله.',
+                        style: TextStyle(
+                          color: Color(0xFFE7EEFA),
+                          height: 1.5,
+                        ),
                       ),
                     ],
                   ),
@@ -471,7 +448,7 @@ class _HomePageState extends State<HomePage> {
                   icon: Icons.table_chart_outlined,
                   title: 'ملف Excel',
                   subtitle: _excelFile == null
-                      ? 'اختر ملف الطلاب؛ يمكن أن يحتوي عدة أوراق وصفوف.'
+                      ? 'اختر ملف الطلاب؛ يدعم عدة أوراق.'
                       : '${_excelFile!.name} — ${_records.length} سجل',
                   done: _excelFile != null,
                   onTap: _busy ? null : _pickExcel,
@@ -480,9 +457,9 @@ class _HomePageState extends State<HomePage> {
                 _FileStep(
                   number: '2',
                   icon: Icons.description_outlined,
-                  title: 'تصميم Word',
+                  title: 'قالب Word',
                   subtitle: _wordFile == null
-                      ? 'اختر DOCX الذي يحتوي تصميم البطاقة.'
+                      ? 'اختر DOCX الذي يحتوي تصميم البطاقات.'
                       : '${_wordFile!.name} — ${_template?.cardsPerPage ?? 0} بطاقات/صفحة',
                   done: _wordFile != null,
                   onTap: _busy ? null : _pickWord,
@@ -531,7 +508,7 @@ class _HomePageState extends State<HomePage> {
                               ? 'أدخل رقمًا صحيحًا أكبر من صفر.'
                               : _records.isEmpty
                                   ? 'سيبدأ أول طالب بالرقم $start.'
-                                  : 'المعاينة: أول طالب = $start  •  آخر طالب = $end  •  الترقيم لا يعاد من 1 عند تغيير الصف.',
+                                  : 'أول طالب = $start  •  آخر طالب = $end  •  الرقم يستمر بين جميع الصفوف.',
                           style: TextStyle(
                             color: start == null
                                 ? Theme.of(context).colorScheme.error
@@ -545,7 +522,28 @@ class _HomePageState extends State<HomePage> {
                 ),
                 if (_template != null) ...[
                   const SizedBox(height: 12),
-                  _TemplateSummary(template: _template!),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(15),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check_circle,
+                            color: Color(0xFF1A7F46),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'تم اكتشاف ${_template!.cardsPerPage} بطاقات في الصفحة وسيتم استخدام تصميم Word نفسه.',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
                 if (missing.isNotEmpty) ...[
                   const SizedBox(height: 10),
@@ -573,7 +571,9 @@ class _HomePageState extends State<HomePage> {
                             const SizedBox(
                               width: 22,
                               height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2.5),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Text(
@@ -601,9 +601,9 @@ class _HomePageState extends State<HomePage> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    icon: const Icon(Icons.auto_awesome_motion_rounded),
+                    icon: const Icon(Icons.merge_type_rounded),
                     label: const Text(
-                      'دمج البيانات وإنشاء Word + PDF',
+                      'دمج البيانات وإنشاء ملف Word',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
@@ -613,7 +613,9 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      border: Border.all(color: const Color(0xFFE2E7F0)),
+                      border: Border.all(
+                        color: const Color(0xFFE2E7F0),
+                      ),
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Row(
@@ -657,7 +659,7 @@ class _HomePageState extends State<HomePage> {
                                 ),
                                 SizedBox(height: 3),
                                 Text(
-                                  'عرض كل ملفات Word وPDF السابقة، فتحها أو مشاركتها.',
+                                  'عرض ملفات Word الناتجة وفتحها أو مشاركتها.',
                                 ),
                               ],
                             ),
@@ -667,15 +669,6 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  Platform.isWindows
-                      ? 'PDF على Windows: يُستخدم Microsoft Word أولًا لإخراج PDF مطابق للملف الأصلي، ثم LibreOffice كخيار ثانٍ.'
-                      : 'PDF على Android: يستخدم محركًا يدعم Unicode العربي وRTL وخطوط النظام لتجنب الحروف المشفرة أو المتقطعة.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFF68758A),
-                      ),
                 ),
                 const SizedBox(height: 24),
                 const Center(
@@ -693,70 +686,6 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TemplateSummary extends StatelessWidget {
-  final TemplateInfo template;
-
-  const _TemplateSummary({required this.template});
-
-  @override
-  Widget build(BuildContext context) {
-    final fields = template.mode == WordTemplateMode.placeholders
-        ? template.placeholders
-        : template.labeledFields.map((field) {
-            switch (field) {
-              case 'name':
-                return 'الاسم';
-              case 'grade':
-                return 'الصف';
-              case 'committee':
-                return 'اللجنة';
-              case 'seat':
-                return 'رقم الجلوس';
-              default:
-                return field;
-            }
-          }).toList();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'تم اكتشاف تصميم Word',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 7),
-            Text('${template.cardsPerPage} بطاقات في الصفحة'),
-            if (fields.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: fields
-                    .map(
-                      (field) => Chip(
-                        avatar: const Icon(
-                          Icons.check_circle,
-                          size: 17,
-                          color: Color(0xFF1A7F46),
-                        ),
-                        label: Text(field),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
-          ],
         ),
       ),
     );
@@ -791,9 +720,13 @@ class _FileStep extends StatelessWidget {
           child: Row(
             children: [
               CircleAvatar(
-                backgroundColor: done ? const Color(0xFFE6F4EA) : null,
+                backgroundColor:
+                    done ? const Color(0xFFE6F4EA) : null,
                 child: done
-                    ? const Icon(Icons.check, color: Color(0xFF167B3F))
+                    ? const Icon(
+                        Icons.check,
+                        color: Color(0xFF167B3F),
+                      )
                     : Text(number),
               ),
               const SizedBox(width: 13),
@@ -813,7 +746,9 @@ class _FileStep extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: const TextStyle(color: Color(0xFF667389)),
+                      style: const TextStyle(
+                        color: Color(0xFF667389),
+                      ),
                     ),
                   ],
                 ),
