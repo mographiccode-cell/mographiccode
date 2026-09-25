@@ -85,7 +85,7 @@ class MigrationBackupService {
 
     final temp = await getTemporaryDirectory();
     final stamp = DateTime.now().microsecondsSinceEpoch;
-    final tempDb = File(p.join(temp.path, 'inspect_projectdesk_\${stamp}.db'));
+    final tempDb = File(p.join(temp.path, 'inspect_projectdesk_${stamp}.db'));
     await tempDb.writeAsBytes(dbBytes, flush: true);
 
     Database? check;
@@ -116,7 +116,7 @@ class MigrationBackupService {
 
       Future<int> count(String table) async {
         final rows =
-            await check!.rawQuery('SELECT COUNT(*) AS c FROM \$table');
+            await check!.rawQuery('SELECT COUNT(*) AS c FROM $table');
         return Sqflite.firstIntValue(rows) ?? 0;
       }
 
