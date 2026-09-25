@@ -57,6 +57,71 @@ jobs:
           cp -R ../recovery_src/lib .
           cp ../recovery_src/pubspec.yaml .
           sed -i "/dart:convert/d" lib/main.dart
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('pubspec.yaml')
+          s = p.read_text()
+          import re
+          s = re.sub(r'^version:\s*.*          rm -f analysis_options.yaml
+          cp ../recovery_src/android_overlay/app/src/main/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          rm -rf android/app/src/main/kotlin
+          mkdir -p android/app/src/main/kotlin/com/mographikod/projectdesk_recovery
+          cp ../recovery_src/android_overlay/app/src/main/kotlin/com/mographikod/projectdesk_recovery/*.kt android/app/src/main/kotlin/com/mographikod/projectdesk_recovery/
+          sed -i 's/AccessibilityManager.FEEDBACK_ALL_MASK/android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK/g' android/app/src/main/kotlin/com/mographikod/projectdesk_recovery/MainActivity.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          for p in Path('android/app/src/main/kotlin/com/mographikod/projectdesk_recovery').glob('*.kt'):
+              s = p.read_text()
+              s = s.replace('execSQL("PRAGMA journal_mode=DELETE")', 'rawQuery("PRAGMA journal_mode=DELETE", null).use { it.moveToFirst() }')
+              s = s.replace("execSQL(\"PRAGMA journal_mode=DELETE\")", "rawQuery(\"PRAGMA journal_mode=DELETE\", null).use { it.moveToFirst() }")
+              p.write_text(s)
+          PY
+          mkdir -p android/app/src/main/res/xml
+          cp ../recovery_src/android_overlay/app/src/main/res/xml/accessibility_service_config.xml android/app/src/main/res/xml/
+          cp ../recovery_src/android_overlay/app/src/main/res/values/strings.xml android/app/src/main/res/values/strings.xml
+          rm -f test/widget_test.dart
+          grep -q "com.mographikod.projectdesk_recovery" android/app/build.gradle.kts
+          grep -q "RecoveryAccessibilityService" android/app/src/main/AndroidManifest.xml
+          grep -q "com.mographikod.projectdesk" android/app/src/main/res/xml/accessibility_service_config.xml
+          grep -q "RecoveryBackupBuilder" android/app/src/main/kotlin/com/mographikod/projectdesk_recovery/MainActivity.kt
+          grep -q "version: 1.0.1+2" pubspec.yaml
+          ! grep -R 'execSQL("PRAGMA journal_mode=DELETE")' android/app/src/main/kotlin/com/mographikod/projectdesk_recovery
+
+      - name: Resolve dependencies
+        working-directory: recovery_app
+        run: flutter pub get
+
+      - name: Static analysis
+        working-directory: recovery_app
+        run: flutter analyze
+
+      - name: Build release APK
+        working-directory: recovery_app
+        run: flutter build apk --release
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          test -s recovery_app/build/app/outputs/flutter-apk/app-release.apk
+          unzip -t recovery_app/build/app/outputs/flutter-apk/app-release.apk >/dev/null
+          sha256sum recovery_app/build/app/outputs/flutter-apk/app-release.apk
+          ls -lh recovery_app/build/app/outputs/flutter-apk/app-release.apk
+          APKA=$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | head -1)
+          "$APKA" apk summary recovery_app/build/app/outputs/flutter-apk/app-release.apk
+          test "$("$APKA" manifest application-id recovery_app/build/app/outputs/flutter-apk/app-release.apk)" = "com.mographikod.projectdesk_recovery"
+          test "$("$APKA" manifest version-code recovery_app/build/app/outputs/flutter-apk/app-release.apk)" = "2"
+          test "$("$APKA" manifest version-name recovery_app/build/app/outputs/flutter-apk/app-release.apk)" = "1.0.1"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectDesk-Recovery-v1.0.1-clean-pre-resign
+          path: recovery_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 3
+, 'version: 1.0.1+2', s, flags=re.M)
+          p.write_text(s)
+          PY
           rm -f analysis_options.yaml
           cp ../recovery_src/android_overlay/app/src/main/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
           rm -rf android/app/src/main/kotlin
