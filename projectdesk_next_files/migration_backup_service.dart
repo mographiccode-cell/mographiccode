@@ -85,7 +85,7 @@ class MigrationBackupService {
 
     final temp = await getTemporaryDirectory();
     final stamp = DateTime.now().microsecondsSinceEpoch;
-    final tempDb = File(p.join(temp.path, 'inspect_projectdesk_${stamp}.db'));
+    final tempDb = File(p.join(temp.path, 'inspect_projectdesk_$stamp.db'));
     await tempDb.writeAsBytes(dbBytes, flush: true);
 
     Database? check;
