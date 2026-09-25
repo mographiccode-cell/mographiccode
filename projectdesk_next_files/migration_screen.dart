@@ -29,7 +29,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
       if (result != null) setState(() => inspection = result);
     } catch (error) {
       if (mounted) {
-        setState(() => message = 'تعذر قراءة النسخة: ' + error.toString().replaceFirst('Exception: ', ''));
+        setState(() => message = 'تعذر قراءة النسخة: \${error.toString().replaceFirst('Exception: ', '')}');
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -47,12 +47,12 @@ class _MigrationScreenState extends State<MigrationScreen> {
       await MigrationBackupService.instance.restoreInspection(selected);
       await DatabaseService.instance.setSetting('migration_done', '1');
       if (!mounted) return;
-      setState(() => message = 'تم نقل ' + selected.projects.toString() + ' مشروع بنجاح.');
+      setState(() => message = 'تم نقل \${selected.projects} مشروع بنجاح.');
       await Future<void>.delayed(const Duration(milliseconds: 350));
       if (mounted) widget.onDone();
     } catch (error) {
       if (mounted) {
-        setState(() => message = 'فشل الاستيراد: ' + error.toString().replaceFirst('Exception: ', ''));
+        setState(() => message = 'فشل الاستيراد: \${error.toString().replaceFirst('Exception: ', '')}');
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -151,7 +151,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
               FilledButton.icon(
                 onPressed: busy || !data.hasProjects ? null : _restore,
                 icon: const Icon(Icons.download_done_rounded),
-                label: Text('استيراد ' + data.projects.toString() + ' مشروع الآن'),
+                label: Text('استيراد \${data.projects} مشروع الآن'),
               ),
             ],
             if (message.isNotEmpty) ...[
