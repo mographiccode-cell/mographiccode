@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
-import '../services/backup_service.dart';
+import '../services/migration_backup_service.dart';
 import '../services/database_service.dart';
 
 class MigrationScreen extends StatefulWidget {
@@ -24,7 +24,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
       message = '';
     });
     try {
-      final result = await BackupService.instance.pickAndInspectBackup();
+      final result = await MigrationBackupService.instance.pickAndInspectBackup();
       if (!mounted) return;
       if (result != null) setState(() => inspection = result);
     } catch (error) {
@@ -44,7 +44,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
       message = '';
     });
     try {
-      await BackupService.instance.restoreInspection(selected);
+      await MigrationBackupService.instance.restoreInspection(selected);
       await DatabaseService.instance.setSetting('migration_done', '1');
       if (!mounted) return;
       setState(() => message = 'تم نقل ' + selected.projects.toString() + ' مشروع بنجاح.');
