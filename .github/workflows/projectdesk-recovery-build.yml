@@ -53,6 +53,7 @@ jobs:
           rm -rf lib
           cp -R ../recovery_src/lib .
           cp ../recovery_src/pubspec.yaml .
+          sed -i "/dart:typed_data/d" lib/main.dart
           rm -f analysis_options.yaml
           cp -R ../recovery_src/android_overlay/app/src/main/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
           rm -rf android/app/src/main/kotlin
