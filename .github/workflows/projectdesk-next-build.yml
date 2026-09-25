@@ -1,0 +1,166 @@
+name: Build ProjectDesk Next
+
+on:
+  push:
+    branches:
+      - projectdesk-v13-staging
+    paths:
+      - '.github/workflows/projectdesk-next-build.yml'
+      - 'projectdesk_next_files/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-next:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore ProjectDesk v1.4 source
+        shell: bash
+        run: |
+          cat projectdesk_build/source.part* > base.b64
+          base64 --decode base.b64 > base.tar.xz
+          tar -xJf base.tar.xz
+
+          cat projectdesk_patch/voice.patch.part* > voice.b64
+          base64 --decode voice.b64 > voice.tar.xz
+          tar -xJf voice.tar.xz -C project_organizer_flutter
+
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('project_organizer_flutter')
+          p=root/'lib/widgets/voice_text_field.dart'
+          s=p.read_text()
+          s=s.replace('selection.start.clamp(0, text.length) : text.length','selection.start.clamp(0, text.length).toInt() : text.length')
+          s=s.replace('selection.end.clamp(start, text.length) : start','selection.end.clamp(start, text.length).toInt() : start')
+          p.write_text(s)
+          for rel in ['lib/screens/ideas_screen.dart','lib/screens/project_detail_screen.dart','lib/screens/projects_screen.dart','lib/screens/tasks_screen.dart']:
+              p=root/rel
+              p.write_text(p.read_text().replace('separatorBuilder: (_, __)','separatorBuilder: (_, _)'))
+          p=root/'lib/services/backup_service.dart'
+          p.write_text(p.read_text().replace("import 'package:cross_file/cross_file.dart';\n",''))
+          p=root/'lib/services/file_service.dart'
+          s=p.read_text()
+          if "import 'dart:convert';\n" not in s:
+              s=s.replace("import 'dart:io';\n","import 'dart:convert';\nimport 'dart:io';\n")
+          s=s.replace('XmlDocument.parse(String.fromCharCodes(doc.content))','XmlDocument.parse(utf8.decode(doc.content as List<int>))')
+          p.write_text(s)
+          PY
+
+          cat projectdesk_patch_v13/v13.part* > v13.b64
+          base64 --decode v13.b64 > v13.tar.xz
+          tar -xJf v13.tar.xz -C project_organizer_flutter
+
+          cat projectdesk_patch_v14/diff.part* > v14.b64
+          base64 --decode v14.b64 > v14.diff.xz
+          xz -dc v14.diff.xz > v14.diff
+          patch --batch -p5 -d project_organizer_flutter < v14.diff
+
+      - name: Apply ProjectDesk Next migration layer
+        shell: bash
+        run: |
+          cp projectdesk_next_files/main.dart project_organizer_flutter/lib/main.dart
+          cp projectdesk_next_files/migration_screen.dart project_organizer_flutter/lib/screens/migration_screen.dart
+          cp projectdesk_next_files/migration_backup_service.dart project_organizer_flutter/lib/services/migration_backup_service.dart
+          sed -i 's/^version:.*/version: 2.0.0+1/' project_organizer_flutter/pubspec.yaml
+          grep -q "ProjectDesk Next" project_organizer_flutter/lib/main.dart
+          grep -q "pickAndInspectBackup" project_organizer_flutter/lib/services/migration_backup_service.dart
+          grep -q "version: 2.0.0+1" project_organizer_flutter/pubspec.yaml
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Regenerate Android host for side-by-side app
+        shell: bash
+        working-directory: project_organizer_flutter
+        run: |
+          mkdir -p /tmp/pdnext-native /tmp/pdnext-icons
+          cp android/app/src/main/AndroidManifest.xml /tmp/pdnext-native/AndroidManifest.xml
+          cp android/app/src/main/kotlin/com/mographikod/projectdesk/MainActivity.kt /tmp/pdnext-native/MainActivity.kt
+          find android/app/src/main/res -path '*/mipmap-*/ic_launcher.png' -exec cp --parents {} /tmp/pdnext-icons/ \; 2>/dev/null || true
+
+          rm -rf android
+          flutter create . --platforms=android --org com.mographikod --project-name projectdesk_next
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/pdnext-native/MainActivity.kt')
+          s=p.read_text().replace('package com.mographikod.projectdesk','package com.mographikod.projectdesk.next')
+          p.write_text(s)
+
+          p=Path('/tmp/pdnext-native/AndroidManifest.xml')
+          s=p.read_text().replace('android:label="منظّم المشاريع"','android:label="ProjectDesk Next"')
+          p.write_text(s)
+
+          p=Path('android/app/build.gradle.kts')
+          s=p.read_text().replace('com.mographikod.projectdesk_next','com.mographikod.projectdesk.next')
+          p.write_text(s)
+          PY
+
+          cp /tmp/pdnext-native/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          rm -rf android/app/src/main/kotlin
+          mkdir -p android/app/src/main/kotlin/com/mographikod/projectdesk/next
+          cp /tmp/pdnext-native/MainActivity.kt android/app/src/main/kotlin/com/mographikod/projectdesk/next/MainActivity.kt
+
+          if [ -d /tmp/pdnext-icons/android/app/src/main/res ]; then
+            cp -rf /tmp/pdnext-icons/android/app/src/main/res/mipmap-* android/app/src/main/res/ || true
+          fi
+          rm -f test/widget_test.dart
+
+          grep -q 'com.mographikod.projectdesk.next' android/app/build.gradle.kts
+          grep -q 'package com.mographikod.projectdesk.next' android/app/src/main/kotlin/com/mographikod/projectdesk/next/MainActivity.kt
+          grep -q 'ProjectDesk Next' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
+
+      - name: Resolve dependencies
+        working-directory: project_organizer_flutter
+        run: flutter pub get
+
+      - name: Static analysis
+        working-directory: project_organizer_flutter
+        run: flutter analyze
+
+      - name: Unit tests
+        working-directory: project_organizer_flutter
+        run: flutter test
+
+      - name: Build release APK
+        working-directory: project_organizer_flutter
+        run: flutter build apk --release
+
+      - name: Verify APK identity
+        shell: bash
+        run: |
+          APK=project_organizer_flutter/build/app/outputs/flutter-apk/app-release.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          APKA=$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | head -1)
+          APP_ID=$("$APKA" manifest application-id "$APK")
+          VERSION_CODE=$("$APKA" manifest version-code "$APK")
+          VERSION_NAME=$("$APKA" manifest version-name "$APK")
+          echo "APP_ID=$APP_ID"
+          echo "VERSION_CODE=$VERSION_CODE"
+          echo "VERSION_NAME=$VERSION_NAME"
+          test "$APP_ID" = "com.mographikod.projectdesk.next"
+          test "$VERSION_CODE" = "1"
+          test "$VERSION_NAME" = "2.0.0"
+          sha256sum "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjectDesk-Next-v2.0.0-pre-resign
+          path: project_organizer_flutter/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 3
