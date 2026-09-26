@@ -135,3 +135,4 @@ jobs:
           path: recovery_app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 3
+# rebuild compatibility after real backup inspection
