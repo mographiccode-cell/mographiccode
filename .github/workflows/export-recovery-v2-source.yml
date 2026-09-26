@@ -1,0 +1,27 @@
+name: Export Recovery v2 Source
+on:
+  push:
+    branches:
+      - projectdesk-v13-staging
+    paths:
+      - '.github/workflows/export-recovery-v2-source.yml'
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore source
+        shell: bash
+        run: |
+          cat projectdesk_recovery_v2/source.part* > recovery.b64
+          base64 --decode recovery.b64 > recovery.tar.xz
+          mkdir recovery_src
+          tar -xJf recovery.tar.xz -C recovery_src
+          tar -czf ProjectDesk-Recovery-v2-source.tar.gz -C recovery_src .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjectDesk-Recovery-v2-source
+          path: ProjectDesk-Recovery-v2-source.tar.gz
+          retention-days: 1
