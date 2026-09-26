@@ -29,7 +29,8 @@ class _MigrationScreenState extends State<MigrationScreen> {
       if (result != null) setState(() => inspection = result);
     } catch (error) {
       if (mounted) {
-        setState(() => message = 'تعذر قراءة النسخة: ${error.toString().replaceFirst('Exception: ', '')}');
+        setState(() => message =
+            "تعذر قراءة النسخة: ${error.toString().replaceFirst('Exception: ', '')}");
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -52,7 +53,8 @@ class _MigrationScreenState extends State<MigrationScreen> {
       if (mounted) widget.onDone();
     } catch (error) {
       if (mounted) {
-        setState(() => message = 'فشل الاستيراد: ${error.toString().replaceFirst('Exception: ', '')}');
+        setState(() => message =
+            "فشل الاستيراد: ${error.toString().replaceFirst('Exception: ', '')}");
       }
     } finally {
       if (mounted) setState(() => busy = false);
