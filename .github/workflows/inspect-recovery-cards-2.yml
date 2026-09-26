@@ -1,0 +1,25 @@
+name: Inspect Recovery Card Parser 2
+on:
+  push:
+    branches:
+      - projectdesk-v13-staging
+    paths:
+      - '.github/workflows/inspect-recovery-cards-2.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore source
+        shell: bash
+        run: |
+          cat projectdesk_recovery_v2/source.part* > recovery.b64
+          base64 --decode recovery.b64 > recovery.tar.xz
+          mkdir recovery_src
+          tar -xJf recovery.tar.xz -C recovery_src
+      - name: Show parser section
+        shell: bash
+        run: |
+          nl -ba recovery_src/android_overlay/app/src/main/kotlin/com/mographikod/projectdesk_recovery/RecoveryAccessibilityService.kt | sed -n '360,620p'
