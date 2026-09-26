@@ -1,0 +1,30 @@
+name: Inspect Recovery Logic
+on:
+  push:
+    branches:
+      - projectdesk-v13-staging
+    paths:
+      - '.github/workflows/inspect-recovery-logic.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore source
+        shell: bash
+        run: |
+          cat projectdesk_recovery_v2/source.part* > recovery.b64
+          base64 --decode recovery.b64 > recovery.tar.xz
+          mkdir recovery_src
+          tar -xJf recovery.tar.xz -C recovery_src
+      - name: Print recovery logic
+        shell: bash
+        run: |
+          echo '--- ACCESSIBILITY ---'
+          cat recovery_src/android_overlay/app/src/main/kotlin/com/mographikod/projectdesk_recovery/RecoveryAccessibilityService.kt
+          echo '--- BACKUP BUILDER ---'
+          cat recovery_src/android_overlay/app/src/main/kotlin/com/mographikod/projectdesk_recovery/RecoveryBackupBuilder.kt
+          echo '--- MAIN ACTIVITY ---'
+          cat recovery_src/android_overlay/app/src/main/kotlin/com/mographikod/projectdesk_recovery/MainActivity.kt
