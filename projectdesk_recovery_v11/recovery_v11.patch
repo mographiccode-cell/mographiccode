@@ -1,0 +1,107 @@
+--- a/RecoveryAccessibilityService.kt
++++ b/RecoveryAccessibilityService.kt
+@@ -159,7 +159,13 @@
+                 ?: cards.firstOrNull { normalize(it.shortTitle) == normalize(target.shortTitle) }
+             if (match != null) {
+                 if (clickNode(match.node)) {
+-                    if (waitUntil(7000) { val r = rootInActiveWindow; r != null && containsText(r, "الملخص") && containsText(r, "التسليم") }) return true
++                    if (waitUntil(7000) {
++                            val r = rootInActiveWindow
++                            r != null && r.packageName?.toString() == TARGET &&
++                                containsText(r, target.shortTitle) &&
++                                (containsText(r, "تعديل") || containsText(r, "حذف") ||
++                                    (containsText(r, "الملخص") && containsText(r, "التسليم")))
++                        }) return true
+                 }
+             }
+             val scroll = findPrimaryScrollable(root)
+@@ -267,7 +273,13 @@
+         if (project.optString("studentName").isBlank() && fallback.size > 2) project.put("studentName", fallback[2])
+ 
+         performGlobalAction(GLOBAL_ACTION_BACK)
+-        waitUntil(5000) { val r = rootInActiveWindow; r != null && containsText(r, "الملخص") && containsText(r, "التسليم") }
++        val expectedTitle = project.optString("shortTitle")
++        waitUntil(5000) {
++            val r = rootInActiveWindow
++            r != null && r.packageName?.toString() == TARGET &&
++                (expectedTitle.isBlank() || containsText(r, expectedTitle)) &&
++                (containsText(r, "تعديل") || containsText(r, "الملخص") || containsText(r, "بيانات المشروع"))
++        }
+         sleep(350)
+     }
+@@ -421,27 +433,57 @@
+         walk(root) { n -> if (n.isClickable) nodes.add(n) }
+         val out = mutableListOf<ProjectDescriptor>()
+         val seen = mutableSetOf<String>()
++        val screenWidth = resources.displayMetrics.widthPixels
++        val ignored = setOf(
++            "الكل", "Part 1", "Part 2", "Part 1 الحالي", "Part 2 الحالي",
++            "قيد التنفيذ", "تعديلات", "مكتمل", "مشروع جديد", "إضافة مشروع",
++            "سجل الأفكار", "الرئيسية", "المشاريع", "الإعدادات", "بحث"
++        )
++
+         for (n in nodes) {
+-            val texts = descendantTexts(n).filter { it.isNotBlank() }
+-            val partText = texts.firstOrNull { it == "Part 1" || it == "Part 2" } ?: continue
+-            val progressText = texts.firstOrNull { it.matches(Regex("\\d{1,3}%")) } ?: continue
+-            val partIndex = texts.indexOf(partText)
+-            val before = texts.take(if (partIndex >= 0) partIndex else texts.size)
+-            val status = before.firstOrNull { statuses.contains(it) }.orEmpty()
+-            val candidates = before.filterNot { statuses.contains(it) || it == "المشاريع" }
+-            if (candidates.isEmpty()) continue
+-            val short = candidates.first()
+-            if (short in setOf("الكل", "Part 1", "Part 2", "قيد التنفيذ", "تعديلات", "مكتمل")) continue
+-            val original = if (candidates.size >= 3) candidates.getOrElse(1) { "" } else ""
+-            val student = when {
+-                candidates.size >= 4 -> candidates[candidates.size - 2]
+-                candidates.size >= 2 -> candidates[candidates.size - 1]
+-                else -> ""
++            val b = bounds(n)
++            if (b.width() < (screenWidth * 0.55).toInt() || b.height() < 60) continue
++            val texts = descendantTexts(n).map { it.trim() }.filter { it.isNotBlank() }.distinct()
++            if (texts.isEmpty()) continue
++
++            val partText = texts.firstOrNull { it == "Part 1" || it == "Part 2" }
++            val progressText = texts.firstOrNull { it.matches(Regex("\\d{1,3}%")) }
++            if (partText != null && progressText != null) {
++                val partIndex = texts.indexOf(partText)
++                val before = texts.take(if (partIndex >= 0) partIndex else texts.size)
++                val status = before.firstOrNull { statuses.contains(it) }.orEmpty()
++                val candidates = before.filterNot { statuses.contains(it) || ignored.contains(it) }
++                if (candidates.isEmpty()) continue
++                val short = candidates.first()
++                val original = if (candidates.size >= 3) candidates.getOrElse(1) { "" } else ""
++                val student = when {
++                    candidates.size >= 4 -> candidates[candidates.size - 2]
++                    candidates.size >= 2 -> candidates[candidates.size - 1]
++                    else -> ""
++                }
++                val branch = if (candidates.size >= 4) candidates.last() else ""
++                val signature = texts.joinToString("¦")
++                if (seen.add(signature)) {
++                    out.add(ProjectDescriptor(n, signature, short, original, student, branch, if (partText.endsWith("2")) 2 else 1, status.ifBlank { "جديد" }, progressText.removeSuffix("%").toIntOrNull() ?: 0))
++                }
++                continue
++            }
++
++            // Compatibility with the simplified v1.2 UI. Those cards do not show Part/progress.
++            val candidates = texts.filterNot { t ->
++                ignored.contains(t) || statuses.contains(t) ||
++                    t.contains("ابحث باسم المشروع") || t.contains("تكلم") ||
++                    t == "فتح" || t == "حذف" || t == "تعديل"
+             }
+-            val branch = if (candidates.size >= 4) candidates.last() else ""
+-            val signature = texts.joinToString("¦")
++            if (candidates.size < 2 || candidates.size > 10) continue
++            val short = candidates.first()
++            if (short.length < 2 || short.length > 180) continue
++            val original = candidates.getOrElse(1) { "" }
++            val student = candidates.getOrElse(2) { candidates.lastOrNull().orEmpty() }
++            val branch = candidates.drop(3).firstOrNull { it.length in 2..100 }.orEmpty()
++            val signature = "legacy¦" + candidates.joinToString("¦")
+             if (seen.add(signature)) {
+-                out.add(ProjectDescriptor(n, signature, short, original, student, branch, if (partText.endsWith("2")) 2 else 1, status.ifBlank { "جديد" }, progressText.removeSuffix("%").toIntOrNull() ?: 0))
++                out.add(ProjectDescriptor(n, signature, short, original, student, branch, 1, "جديد", 0))
+             }
+         }
+         return out.sortedBy { bounds(it.node).top }
